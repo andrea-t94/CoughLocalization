@@ -106,20 +106,59 @@ def scale_minmax(X, min=0.0, max=1.0):
     return X_scaled
 
 
-def spectrogram_image(y, sr, out, hop_length, n_fft, n_mels):
-    ''' convert audio in logmel-spectrogram of dimension (N_MELS, N_SPECTRO) and subsequently into immage of dimension (N_MELS, N_SPECTRO) pixels'''
-    #mels = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=n_mels,
-     #                                     n_fft=n_fft, hop_length=hop_length)
-    #mels = np.log(mels + 1e-9)  # add small number to avoid log(0), better working librosa implementation
-    #mels = librosa.power_to_db(mels**2, ref=np.max)
-    mels = melspectrogram(signal)
-    # min-max scale to fit inside 8-bit range
-    img = scale_minmax(mels, 0, 255).astype(np.uint16)
-    img = np.flip(img, axis=0)  # put low frequencies at the bottom in image
-    img = 255 - img  # invert. make black==more energy
+def mono_to_color(X, mean=None, std=None, norm_max=None, norm_min=None, eps=1e-6):
+    # Stack X as [X,X,X]
+    X = np.stack([X, X, X], axis=-1)
 
-    # save as PNG
-    skimage.io.imsave(out, img)
+    # Standardize
+    mean = mean or X.mean()
+    std = std or X.std()
+    Xstd = (X - mean) / (std + eps)
+    _min, _max = Xstd.min(), Xstd.max()
+    norm_max = norm_max or _max
+    norm_min = norm_min or _min
+    if (_max - _min) > eps:
+        # Scale to [0, 255]
+        V = Xstd
+        V[V < norm_min] = norm_min
+        V[V > norm_max] = norm_max
+        V = 255 * (V - norm_min) / (norm_max - norm_min)
+        V = V.astype(np.uint8)
+    else:
+        # Just zero
+        V = np.zeros_like(Xstd, dtype=np.uint16)
+    V = np.flip(V, axis=0)  # put low frequencies at the bottom in image
+    V = 255 - V
+    return V
+
+def open_fat_image(img)->Image:
+    # open
+    x = Image.fromarray(img).convert('RGB')
+    # crop
+    time_dim, base_dim = x.size
+    #crop_x = random.randint(0, time_dim - base_dim)
+    #x = x.crop([crop_x, 0, crop_x+base_dim, base_dim])
+    # standardize
+    img = array_to_img(x, dtype=np.float32)
+    return img
+
+def spectrogram_image(y, sr, out, hop_length, n_fft, n_mels, mono=True):
+    ''' convert audio in logmel-spectrogram of dimension (N_MELS, N_SPECTRO) and subsequently into immage of dimension (N_MELS, N_SPECTRO) pixels'''
+    mels = melspectrogram(signal)
+    plt.imshow(mels, interpolation='nearest')
+    plt.savefig(r"C:\Users\Administrator\Desktop\lozio.png")
+    if mono:
+        # min-max scale to fit inside 8-bit range
+        img = scale_minmax(mels, 0, 255).astype(np.uint16)
+        img = np.flip(img, axis=0)  # put low frequencies at the bottom in image
+        img = 255 - img  # invert. make black==more energy
+        # save as PNG
+        skimage.io.imsave(out, img)
+    else:
+        newImg = mono_to_color(mel)
+        newImg = open_fat_image(newImg)
+        newImg.show()
+        newImg.save(out)
 
 
 def load_noises():
@@ -251,9 +290,7 @@ def generate_dataset(folder, output_folder, output_name, spectro=True, start=0, 
         print(output_folder + "/" + output_filename)
 
         if save_to_bucket:
-            print("ciao")
             bucket_name = 'voicemed-ml-processed-data'
-            print("saving to " + bucket_name)
             # output folder kept embedded local dir here in order to keep it more general
             root_path = os.path.split(output_folder)[1]
             upload_to_bucket(bucket_name=bucket_name, prefix=output_name, root_path=root_path, file=output_filename)
