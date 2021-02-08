@@ -14,6 +14,8 @@ import warnings
 import librosa.display
 import skimage.io
 from datetime import date, datetime
+from PIL import Image
+from tensorflow.keras.preprocessing.image import array_to_img
 
 ######################################################################
 #
@@ -142,11 +144,9 @@ def open_fat_image(img)->Image:
     img = array_to_img(x, dtype=np.float32)
     return img
 
-def spectrogram_image(y, sr, out, hop_length, n_fft, n_mels, mono=True):
+def spectrogram_image(signal, sr, out, hop_length, n_fft, n_mels, mono=True):
     ''' convert audio in logmel-spectrogram of dimension (N_MELS, N_SPECTRO) and subsequently into immage of dimension (N_MELS, N_SPECTRO) pixels'''
     mels = melspectrogram(signal)
-    plt.imshow(mels, interpolation='nearest')
-    plt.savefig(r"C:\Users\Administrator\Desktop\lozio.png")
     if mono:
         # min-max scale to fit inside 8-bit range
         img = scale_minmax(mels, 0, 255).astype(np.uint16)
@@ -155,7 +155,7 @@ def spectrogram_image(y, sr, out, hop_length, n_fft, n_mels, mono=True):
         # save as PNG
         skimage.io.imsave(out, img)
     else:
-        newImg = mono_to_color(mel)
+        newImg = mono_to_color(mels)
         newImg = open_fat_image(newImg)
         newImg.show()
         newImg.save(out)

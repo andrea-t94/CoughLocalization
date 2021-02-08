@@ -21,7 +21,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import Model, layers
 
-import features as features_lib
+import tf_features as features_lib
 
 
 def spectrogram_extractor(params):
