@@ -13,6 +13,32 @@
 # limitations under the License.
 # ==============================================================================
 
+import numpy as np
+
+def params(self, include_activation=False, **overrides):
+    """Returns a dict containing the layer construction hyperparameters to use.
+    Optionally overrides values in the returned dict. Overrides
+    only apply to individual calls of this method, and do not affect
+    future calls.
+    Args:
+      include_activation: If False, activation in the returned dictionary will
+        be set to `None`, and the activation must be applied via a separate
+        layer created by `build_activation_layer`. If True, `activation` in the
+        output param dictionary will be set to the activation function
+        specified in the hyperparams config.
+      **overrides: keyword arguments to override in the hyperparams dictionary.
+    Returns: dict containing the layer construction keyword arguments, with
+      values overridden by the `overrides` keyword arguments.
+    """
+    new_params = self._op_params.copy()
+    new_params['activation'] = None
+    if include_activation:
+      new_params['activation'] = self._activation_fn
+    new_params['use_bias'] = self.use_bias()
+    new_params.update(**overrides)
+    return new_params
+
+
 """Hyperparameters for Spectrograms extraction."""
 
 from dataclasses import dataclass
@@ -26,12 +52,17 @@ class Params:
   sample_rate: float = 16000.0
   stft_window_seconds: float = 0.025
   stft_hop_seconds: float = 0.010
+  n_fft: int = int(np.ceil(sample_rate * stft_window_seconds))
+  hop_length: int = int(np.ceil(sample_rate * stft_hop_seconds))
   mel_bands: int = 64
+  n_mfcc: int = 14
   mel_min_hz: float = 125.0
   mel_max_hz: float = 7500.0
   log_offset: float = 0.001
   patch_window_seconds: float = 0.96
   patch_hop_seconds: float = 0.48
+  silence: float = 0.0018
+  noise_ratio: float = 0.3
 
   @property
   def patch_frames(self):

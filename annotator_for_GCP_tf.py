@@ -5,15 +5,9 @@ from google.cloud import storage
 import json
 import uuid
 from datetime import date, datetime
-from helpers import spectrogram_image
+from helpers import spectrogram_image_tf
 from utils import extract_from_bucket_v2, upload_to_bucket_v2
 import params as spectro_params
-
-######################################################################
-#
-# FEATURE EXTRACTION FUNCTIONS
-#
-######################################################################
 
 def myconverter(o):
     '''convert datetime into string format'''
@@ -23,6 +17,7 @@ def myconverter(o):
 # helper function to type cast list
 def cast_list(test_list, data_type):
     return list(map(data_type, test_list))
+
 
 # helper function to type cast Matrix
 def cast_matrix(test_matrix, data_type):
@@ -51,7 +46,7 @@ if __name__ == '__main__':
         "description": "VOICEMED Cough Dataset",
         "url": "",
         "version": "1.0.0",
-        "year": 2020,
+        "year": 2021,
         "contributor": "Voicemed ML Team",
         "date_created": date.today()
     }
@@ -111,21 +106,23 @@ if __name__ == '__main__':
     for key, value in audioDict.items():
         audio = value[1] + ".wav"
         annotation_events = value[-1]
-        signal, rate = librosa.load(audio, sr=params.sample_rate)
 
         # convert to PNG
         fileNameOut = f"{key}.png"
         out = fr"{annotation_master_dir}/images/{fileNameOut}"
-        spectrogram_image(signal, params=params, out=out)
+        len_signal, spectro_shape = spectrogram_image_tf(audio, out=out)
 
-        N_SPECTRO = len(signal) / params.hop_length
-        # ration spectro:pixel is 1:1
+        N_MELS, N_SPECTRO = spectro_shape[0], spectro_shape[1]
+        frames_per_spectro = len_signal / N_SPECTRO
+        # ratio behind is spectro:pixel is 1:1
+        # in this way I find how many frames are contained in a pixel
+        # in order to say how many pixels are in the bounding boxes
         imageUuid = uuid.uuid4().hex
         image = {
             "license": 1,
             "file_name": fileName,
             "coco_url": out,
-            "height": params.mel_bands,
+            "height": N_MELS,
             "width": N_SPECTRO,
             "date_captured": datetime.now(tz=None),
             "id": imageUuid
@@ -134,12 +131,12 @@ if __name__ == '__main__':
 
         for event in annotation_events:
             starting_event, ending_event = event[0], event[-1]
-            starting_point = starting_event * params.sample_rate / params.hop_length #events in seconds
-            ending_point = ending_event * params.sample_rate / params.hop_length
+            starting_point = starting_event * params.sample_rate / frames_per_spectro #events in seconds
+            ending_point = ending_event * params.sample_rate / frames_per_spectro
             annotation = {
                 "iscrowd": 0,  # just one image
                 "image_id": imageUuid,  # same id as before
-                "bbox": [starting_point, params.mel_bands, ending_point - starting_point, params.mel_bands],
+                "bbox": [starting_point, N_MELS, ending_point - starting_point, N_MELS],
                 # top left x & y position, width and height
                 "category_id": 1,  # stating for cough
                 "id": uuid.uuid1()

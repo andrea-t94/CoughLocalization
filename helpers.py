@@ -16,6 +16,11 @@ import skimage.io
 from datetime import date, datetime
 from PIL import Image
 from tensorflow.keras.preprocessing.image import array_to_img
+import params as spectro_params
+import tensorflow as tf
+import soundfile as sf
+import resampy
+from tf_features_extractor import spectrogram_extractor
 
 ######################################################################
 #
@@ -83,7 +88,7 @@ def std_norm(feat):
     return scaler.transform(feat)
 
 
-def melspectrogram(signal):
+def melspectrogram(signal, SR, N_MELS, N_FFT, HOP_LENGTH):
     signal = librosa.util.normalize(signal)
     spectro = librosa.feature.melspectrogram(
         signal,
@@ -144,9 +149,9 @@ def open_fat_image(img)->Image:
     img = array_to_img(x, dtype=np.float32)
     return img
 
-def spectrogram_image(signal, sr, out, hop_length, n_fft, n_mels, mono=True):
+def spectrogram_image(signal, params, out, mono=True):
     ''' convert audio in logmel-spectrogram of dimension (N_MELS, N_SPECTRO) and subsequently into immage of dimension (N_MELS, N_SPECTRO) pixels'''
-    mels = melspectrogram(signal)
+    mels = melspectrogram(signal, SR=params.sample_rate, N_MELS=params.mel_bands, N_FFT=params.n_fft, HOP_LENGTH=params.hop_length)
     if mono:
         # min-max scale to fit inside 8-bit range
         img = scale_minmax(mels, 0, 255).astype(np.uint16)
@@ -159,6 +164,32 @@ def spectrogram_image(signal, sr, out, hop_length, n_fft, n_mels, mono=True):
         newImg = open_fat_image(newImg)
         newImg.show()
         newImg.save(out)
+
+def spectrogram_image_tf(audio, params, out):
+    #signal, sr = librosa.load(audio, sr=params.sample_rate)
+    # Decode the WAV file.
+    signal, sr = sf.read(audio, dtype=np.int16)
+    assert signal.dtype == np.int16, 'Bad sample type: %r' % wav_data.dtype
+    waveform = signal / 37768.0  # Convert to [-1.0, +1.0]
+    waveform = waveform.astype('float32')
+
+    # Convert to mono and the sample rate expected by YAMNet.
+    if len(waveform.shape) > 1:
+        waveform = np.mean(waveform, axis=1)
+    if sr != params.sample_rate:
+        waveform = resampy.resample(waveform, sr, params.sample_rate)
+        len_signal = len(waveform)
+    extractor = spectrogram_extractor(params, amplitude_spectro=True)
+    spectrogram, features = extractor(waveform)
+
+    #spectrogram reshaping
+    spectrogram = tf.transpose(spectrogram)
+    image_shape = spectrogram.get_shape().as_list()
+    newImg = mono_to_color(spectrogram)
+    newImg = open_fat_image(newImg)
+    newImg.save(out)
+
+    return len_signal, image_shape
 
 
 def load_noises():

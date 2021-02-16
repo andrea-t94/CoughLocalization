@@ -24,7 +24,7 @@ from tensorflow.keras import Model, layers
 import tf_features as features_lib
 
 
-def spectrogram_extractor(params):
+def spectrogram_extractor(params, amplitude_spectro=False):
   """Defines the YAMNet waveform-to-class-scores model.
 
   Args:
@@ -32,13 +32,14 @@ def spectrogram_extractor(params):
 
   Returns:
     A model accepting (num_samples,) waveform input and emitting:
-    - predictions: (num_patches, num_classes) matrix of class scores per time frame
-    - embeddings: (num_patches, embedding size) matrix of embeddings per time frame
     - log_mel_spectrogram: (num_spectrogram_frames, num_mel_bins) spectrogram feature matrix
   """
   waveform = layers.Input(batch_shape=(None,), dtype=tf.float32)
   waveform_padded = features_lib.pad_waveform(waveform, params)
   log_mel_spectrogram, features = features_lib.waveform_to_log_mel_spectrogram_patches(
-      waveform_padded, params)
+      waveform_padded, params, amplitude_spectro)
+  frames_model = Model(
+    name='spectro_extractor', inputs=waveform,
+    outputs=[log_mel_spectrogram, features])
 
-  return log_mel_spectrogram, features
+  return frames_model

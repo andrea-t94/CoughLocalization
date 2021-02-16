@@ -18,8 +18,7 @@
 import numpy as np
 import tensorflow as tf
 
-
-def waveform_to_log_mel_spectrogram_patches(waveform, params):
+def waveform_to_log_mel_spectrogram_patches(waveform, params, amplitude_spectro=False):
   """Compute log mel spectrogram patches of a 1-D waveform."""
   with tf.name_scope('log_mel_features'):
     # waveform has shape [<# samples>]
@@ -55,6 +54,9 @@ def waveform_to_log_mel_spectrogram_patches(waveform, params):
         upper_edge_hertz=params.mel_max_hz)
     mel_spectrogram = tf.matmul(
       magnitude_spectrogram, linear_to_mel_weight_matrix)
+    if amplitude_spectro:
+        #Convert power spectrogram into amplitude spectrogram
+        mel_spectrogram = mel_spectrogram**2
     log_mel_spectrogram = tf.math.log(mel_spectrogram + params.log_offset)
     # log_mel_spectrogram has shape [<# STFT frames>, params.mel_bands]
 
