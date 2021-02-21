@@ -32,12 +32,22 @@ if __name__ == '__main__':
     cough_prefix = f"{prefix}/Demo"
     images_prefix = f"{prefix}/images"
     annotation_prefix = f"{prefix}/cocoset"
+    dataset_prefix = f"{prefix}/trainvalSet"
 
     #tmp paths
     annotation_master_dir = r'C:/Users/Administrator/Desktop/tmp'
     image_path = fr'{annotation_master_dir}/images'
     annotation_path = fr'{annotation_master_dir}/coco_notations'
+    dataset_path = fr'{annotation_master_dir}/trainvalSet'
+    tmp_dirs = [annotation_master_dir, image_path, annotation_path, dataset_path]
     cocoSetName = "voicemedCocoSet"
+
+    #tmp dirs creation
+    for dir in tmp_dirs:
+    try:
+        os.mkdir(f"{dir}")
+    except:
+        pass
 
     params = spectro_params.Params()
 
@@ -76,11 +86,7 @@ if __name__ == '__main__':
     storage_client = storage.Client()
     bucket = storage_client.get_bucket(bucket_name)
     extracted,blob_names = extract_from_bucket_v2(bucket.name,cough_prefix,root_path=annotation_master_dir,local_dir='')
-    try:
-        os.mkdir(f"{image_path}")
-        os.mkdir(f"{annotation_path}")
-    except:
-        pass
+
     ######
     # AudioDict struct
     # fileName : (gcp_artifacts_uri, local_path, xmin, xmax)
@@ -121,7 +127,7 @@ if __name__ == '__main__':
         image = {
             "license": 1,
             "file_name": fileName,
-            "coco_url": out,
+            "coco_url": value[0],
             "height": N_MELS,
             "width": N_SPECTRO,
             "date_captured": datetime.now(tz=None),
@@ -155,5 +161,24 @@ if __name__ == '__main__':
     with open(fr'{annotation_path}/{cocoSetName}.json', 'w') as json_file:
         json_dump = json.dump(voicemedCocoSet, json_file, default=myconverter)
 
+    #building training-validation set as txt file of path,xmin,xmax,ymin,ymax
+    with open(f"{dataset_path}/{cocoSetName}.txt", 'w') as f:
+        for image in images:
+            image_id = image["id"]
+            image_path = image["coco_url"]
+            anno = image_path
+            for annotation in annotations:
+                if annotation["image_id"] == image_id:
+                    cat_id = annotation["category_id"]
+                    xmin = round(annotation["bbox"][0], 2)
+                    xmax = round(annotation["bbox"][0] + annotation["bbox"][2], 2)
+                    ymin = annotation["bbox"][1] - annotation["bbox"][3]
+                    ymax = annotation["bbox"][1]
+                    anno += ' ' + ','.join([str(xmin), str(ymin), str(xmax), str(ymax), str(cat_id)])
+            print(anno)
+            f.write(anno + "\n")
+
+    #upload toGCP buckets
     upload_to_bucket_v2(bucket_name, images_prefix, root_path= image_path, local_dir='')
     upload_to_bucket_v2(bucket_name, annotation_prefix, root_path=annotation_path, local_dir='', file=fr'{cocoSetName}.json')
+    upload_to_bucket_v2(bucket_name, dataset_prefix, root_path=dataset_path, local_dir='', file=f'{cocoSetName}.txt')
