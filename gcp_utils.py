@@ -1,5 +1,5 @@
 """ REPOSITORY OF UTILS FUNCTIONS """
-""" COMPRISING OF FEATURE EXTRACTIONS FUNCTIONS AS WELL AS FUNTIONS FOR COMMUNICATING WITH GCP ENVIRONMENT"""
+""" COMPRISING FUNTIONS FOR COMMUNICATING WITH GCP ENVIRONMENT"""
 
 import datetime
 import os
@@ -18,27 +18,6 @@ import threading
 
 ######################################################################
 #
-#ENVIRONMENTAL VARIABLES
-#
-######################################################################
-
-warnings.filterwarnings("ignore")
-SR = 44000
-N_FFT = 2048
-HOP_LENGTH = 512
-N_MELS = 60
-SILENCE = 0.0018
-SAMPLE_LENGTH = 0.5 #s
-SAMPLE_SIZE = int(np.ceil(SR*SAMPLE_LENGTH))
-NOISE_RATIO = 0.3
-PAD = int(np.ceil(SR*0.05))
-N_MFCC = 14
-LOCAL_DIR = "/home/jupyter/"
-AUGMENT = LOCAL_DIR+"extracted-data/Noises/"
-
-
-######################################################################
-#
 #GCP INTERACTION FUNCTIONS
 #
 ######################################################################
@@ -47,8 +26,7 @@ AUGMENT = LOCAL_DIR+"extracted-data/Noises/"
 def file_upload_to_bucket(blob, file_path):
     blob.upload_from_filename(file_path)
 
-
-def upload_to_bucket_v2(bucket_name, prefix, root_path='', file=None, local_dir="/home/jupyter/"):
+def upload_to_bucket_v2(bucket_name, prefix, root_path='', file=None, local_dir=''):
     """ Upload file into a bucket, defined by bucket_name and prefix, the folder inside a bucket"""
 
     cores = multiprocessing.cpu_count()
@@ -78,6 +56,11 @@ def upload_to_bucket_v2(bucket_name, prefix, root_path='', file=None, local_dir=
         print('Uploading to {}.'.format(bucket_name + "/" + prefix))
         with tqdm(total=len(threads)) as pbar:
             while len(threads) > 0:
+                if len(threads) < n:
+                   n = len(threads)
+                   warnings.warn(
+                       f"Low amount of files to process, lower than number of CPU cores, consisting of {n}",
+                       ResourceWarning)
                 for i in range(n):
                     try:
                         threads[i].start()
@@ -85,22 +68,18 @@ def upload_to_bucket_v2(bucket_name, prefix, root_path='', file=None, local_dir=
                         warnings.warn(f"Low amount of files to process, lower than number of CPU cores, consisting of {n}",ResourceWarning)
                         n = len(threads)
                         pass
-
                 for i in range(n):
                     threads[i].join()
                     pbar.update(1)
 
                 threads = threads[n:]
-                if len(threads) < n:
-                    n = len(threads)
+
 
 
 def file_download_from_bucket(blob, file_path):
     blob.download_to_filename(file_path)
 
-
-
-def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir="/home/jupyter/", file=None, max_samples=100000,
+def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir='', file=None, max_samples=100000,
                            labels=['']):
     """ Download file from a bucket, identified by bucket_name, prefix stands for folder inside the bucket"""
     cores = multiprocessing.cpu_count()
@@ -121,7 +100,7 @@ def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir="/home/jupy
     if file != None:
         """ Download a single file """
         blob = bucket.blob(prefix + '/' + file)
-        filename = blob.name.replace('_', '/')
+        filename = blob.name
         new_dir = os.path.split(filename)[0]
         new_path = root_path
         for path in new_dir.split('/'):
@@ -140,7 +119,7 @@ def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir="/home/jupy
         for i, label in enumerate(labels):
             blobs = bucket.list_blobs(prefix=prefix + "/" + label, max_results=max_samples)  # Get list of files
             for blob in blobs:
-                filename = blob.name#.replace('_', '/')
+                filename = blob.name
                 blob_names.append(filename)
                 new_dir = os.path.split(filename)[0]
                 new_path = root_path
@@ -150,7 +129,6 @@ def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir="/home/jupy
                         os.mkdir(new_path)
                     except:
                         pass
-                #print(local_dir + root_path + "/" + filename)
                 p = threading.Thread(target=file_download_from_bucket,
                                      args=(blob, local_dir + root_path + "/" + filename))
                 threads.append(p)
@@ -158,21 +136,17 @@ def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir="/home/jupy
 
         with tqdm(total=len(threads)) as pbar:
             while len(threads) > 0:
+                 if len(threads) < n:
+                    n = len(threads)
+                    warnings.warn(
+                        f"Low amount of files to process, lower than number of CPU cores, consisting of {n}",
+                        ResourceWarning)
                 for i in range(n):
-                    try:
-                        threads[i].start()
-                    except:
-                        warnings.warn(
-                            f"Low amount of files to process, lower than number of CPU cores, consisting of {n}",
-                            ResourceWarning)
-                        n = len(threads)
-                        pass
-
+                    threads[i].start()
                 for i in range(n):
                     threads[i].join()
                     pbar.update(1)
 
                 threads = threads[n:]
-                if len(threads) < n:
-                    n = len(threads)
+
         return (extracted, blob_names)
