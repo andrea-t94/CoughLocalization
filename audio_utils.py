@@ -124,17 +124,17 @@ def mono_to_color(X, mean=None, std=None, norm_max=None, norm_min=None, eps=1e-6
         V[V < norm_min] = norm_min
         V[V > norm_max] = norm_max
         V = 255 * (V - norm_min) / (norm_max - norm_min)
-        V = V.astype(np.uint16)
+        V = V.astype(np.uint8)
     else:
         # Just zero
-        V = np.zeros_like(Xstd, dtype=np.uint16)
+        V = np.zeros_like(Xstd, dtype=np.uint8)
     V = np.flip(V, axis=0)  # put low frequencies at the bottom in image
     V = 255 - V
     return V
 
 def open_fat_image(img)->Image:
     # open
-    x = Image.fromarray(img)
+    x = Image.fromarray(img).convert('RGB')
     # crop
     time_dim, base_dim = x.size
     #crop_x = random.randint(0, time_dim - base_dim)

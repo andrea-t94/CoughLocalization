@@ -34,15 +34,7 @@ if __name__ == '__main__':
     image_path = fr'{annotation_master_dir}/images'
     annotation_path = fr'{annotation_master_dir}/coco_notations'
     dataset_path = fr'{annotation_master_dir}/trainvalSet'
-    tmp_dirs = [annotation_master_dir, image_path, annotation_path, dataset_path]
-
-    #tmp dirs creation
-    for dir in tmp_dirs:
-        try:
-            os.mkdir(f"{dir}")
-        except:
-            shutil.rmtree(f"{dir}")
-            os.mkdir(f"{dir}")
+    tmp_dirs = [image_path, annotation_path, dataset_path]
 
     #loading spectrogram extraction params
     params = spectro_params.Params()
@@ -52,6 +44,15 @@ if __name__ == '__main__':
     input_bucket = storage_client.get_bucket(input_bucket_name)
     output_bucket = storage_client.get_bucket(output_bucket_name)
     extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir,max_samples=50)
+
+    #tmp dirs creation
+    for dir in tmp_dirs:
+        try:
+            os.mkdir(f"{dir}")
+        except:
+            shutil.rmtree(f"{dir}")
+            os.mkdir(f"{dir}")
+
     ######
     # AudioDict struct
     # fileName : (gcp_artifacts_uri, local_path, xmin, xmax)
@@ -93,7 +94,7 @@ if __name__ == '__main__':
         image = {
             "license": 1,
             "file_name": fileName,
-            "coco_url": value[0],
+            "coco_url": f"{value[0]}.png",
             "height": N_MELS,
             "width": N_SPECTRO,
             "date_captured": datetime.now(tz=None),
