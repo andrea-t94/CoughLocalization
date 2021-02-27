@@ -24,11 +24,15 @@ annotation_master_dir = r'C:/Users/Administrator/Desktop/tmp'
 
 
 if __name__ == '__main__':
+
+    # loading spectrogram extraction params
+    params = spectro_params.Params()
+
     #GCP bucket prefixes
     cough_prefix = f"{prefix}"
-    images_prefix = f"{prefix}/images"
-    annotation_prefix = f"{prefix}/cocoset"
-    dataset_prefix = f"{prefix}/trainvalSet"
+    images_prefix = f"{prefix}/{params.mel_bands}/images"
+    annotation_prefix = f"{prefix}/{params.mel_bands}/cocoset"
+    dataset_prefix = f"{prefix}/{params.mel_bands}/trainvalSet"
 
     #tmp paths
     image_path = fr'{annotation_master_dir}/images'
@@ -36,14 +40,11 @@ if __name__ == '__main__':
     dataset_path = fr'{annotation_master_dir}/trainvalSet'
     tmp_dirs = [image_path, annotation_path, dataset_path]
 
-    #loading spectrogram extraction params
-    params = spectro_params.Params()
-
     #cough extraction
     storage_client = storage.Client()
     input_bucket = storage_client.get_bucket(input_bucket_name)
     output_bucket = storage_client.get_bucket(output_bucket_name)
-    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir,max_samples=50)
+    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir)
 
     #tmp dirs creation
     for dir in tmp_dirs:
