@@ -1,15 +1,67 @@
 import os
-from google.cloud import storage
+import shutil
+import multiprocessing
+import warnings
 import json
 import uuid
 from datetime import datetime
+from tqdm import tqdm
+from google.cloud import storage
+import params as spectro_params
+from cocoSet_params import info, licenses, categories
 from helpers import datetimeConverter, cast_matrix
 from audio_utils import spectrogram_image_tf
 from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2
-import params as spectro_params
-from tqdm import tqdm
-from cocoSet_params import info, licenses, categories
-import shutil
+
+
+def annotation_factory(
+    fileName: str,
+    fileInfo: tuple,
+    image_path: str,
+    params: object,
+    annotations: list,
+    images: list
+):
+    audio = fileInfo[1] + ".wav"
+    annotation_events = fileInfo[-1]
+
+    # convert to PNG
+    fileNameOut = f"{fileName}.png"
+    out = fr"{image_path}/{fileNameOut}"
+    len_signal, spectro_shape = spectrogram_image_tf(audio, params=params, out=out)
+
+    N_MELS, N_SPECTRO = spectro_shape[0], spectro_shape[1]
+    frames_per_spectro = len_signal / N_SPECTRO
+    # spectro:pixel is 1:1
+    # in this way I find how many frames are contained in a pixel
+    # in order to say how many pixels are in the bounding boxes
+    imageUuid = uuid.uuid4().hex
+    image = {
+        "license": 1,
+        "file_name": fileName,
+        "coco_url": f"{fileInfo[0]}.png",
+        "height": N_MELS,
+        "width": N_SPECTRO,
+        "date_captured": datetime.now(tz=None),
+        "id": imageUuid
+    }
+    images.append(image)
+
+    for event in annotation_events:
+        starting_event, ending_event = event[0], event[-1]
+        starting_point = starting_event * params.sample_rate / frames_per_spectro #events in seconds
+        ending_point = ending_event * params.sample_rate / frames_per_spectro
+        annotation = {
+            "iscrowd": 0,
+            "image_id": imageUuid,
+            "bbox": [starting_point, N_MELS, ending_point - starting_point, N_MELS],
+            # top left x & y position, width and height
+            "category_id": 0,
+            "id": uuid.uuid1()
+        }
+        annotations.append(annotation)
+
+    return images, annotations
 
 #credentials
 credential_path = "C:/Users/Administrator/Documents/voicemed-d9a595992992.json"
@@ -74,49 +126,39 @@ if __name__ == '__main__':
             audioDict[(f"{fileName}")] = (
             f"{gcp_artifacts_uri}", f"{local_artifacts_uri}", cast_matrix(listWords,float))
 
-    images = []
-    annotations = []
+    manager = multiprocessing.Manager()
+    threads = []
+    images = manager.list()
+    annotations = manager.list()
     #image and cocoSet processing
     test_time = datetime.now()
-    for key, value in tqdm(audioDict.items()):
-        audio = value[1] + ".wav"
-        annotation_events = value[-1]
+    for key, value in audioDict.items():
+        p = multiprocessing.Process(target=annotation_factory,
+                                    args=(key, value, image_path, params, annotations, images))
+        threads.append(p)
+    print('Processing spetro images and building annotations')
+    with tqdm(total=len(threads)) as pbar:
+        cores = multiprocessing.cpu_count()
+        n = cores
+        while len(threads) > 0:
+            if len(threads) < n:
+                n = len(threads)
+                warnings.warn(
+                    f"Low amount of files to process, lower than number of CPU cores, consisting of {n}",
+                    ResourceWarning)
+            for i in range(n):
+                try:
+                    threads[i].start()
+                except:
+                    warnings.warn(f"Low amount of files to process, lower than number of CPU cores, consisting of {n}",
+                                  ResourceWarning)
+                    n = len(threads)
+                    pass
+            for i in range(n):
+                threads[i].join()
+                pbar.update(1)
 
-        # convert to PNG
-        fileNameOut = f"{key}.png"
-        out = fr"{image_path}/{fileNameOut}"
-        len_signal, spectro_shape = spectrogram_image_tf(audio, params=params, out=out)
-
-        N_MELS, N_SPECTRO = spectro_shape[0], spectro_shape[1]
-        frames_per_spectro = len_signal / N_SPECTRO
-        # spectro:pixel is 1:1
-        # in this way I find how many frames are contained in a pixel
-        # in order to say how many pixels are in the bounding boxes
-        imageUuid = uuid.uuid4().hex
-        image = {
-            "license": 1,
-            "file_name": fileName,
-            "coco_url": f"{value[0]}.png",
-            "height": N_MELS,
-            "width": N_SPECTRO,
-            "date_captured": datetime.now(tz=None),
-            "id": imageUuid
-        }
-        images.append(image)
-
-        for event in annotation_events:
-            starting_event, ending_event = event[0], event[-1]
-            starting_point = starting_event * params.sample_rate / frames_per_spectro #events in seconds
-            ending_point = ending_event * params.sample_rate / frames_per_spectro
-            annotation = {
-                "iscrowd": 0,
-                "image_id": imageUuid,
-                "bbox": [starting_point, N_MELS, ending_point - starting_point, N_MELS],
-                # top left x & y position, width and height
-                "category_id": 0,
-                "id": uuid.uuid1()
-            }
-            annotations.append(annotation)
+            threads = threads[n:]
 
     print(f"Total time is {datetime.now() - test_time}")
     # build-up the COCO-dataset
@@ -145,7 +187,6 @@ if __name__ == '__main__':
                     ymin = annotation["bbox"][1] - annotation["bbox"][3]
                     ymax = annotation["bbox"][1]
                     anno += ' ' + ','.join([str(xmin), str(ymin), str(xmax), str(ymax), str(cat_id)])
-            print(anno)
             f.write(anno + "\n")
 
     #upload toGCP buckets
