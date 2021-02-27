@@ -2,25 +2,35 @@
 """ THE FILE CONTAINS FUNCTIONS FOR PREPROCESSING SOUND DATA FILES """
 """ COMPRISING OF FEATURE EXTRACTIONS FUNCTIONS AS WELL AS FUNTIONS FOR COMMUNICATING WITH GCP ENVIRONMENT"""
 import os
-import pandas as pd
 import numpy as np
 import librosa
 from tqdm import tqdm
-import librosa.display
 import multiprocessing
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import math
 import warnings
-import librosa.display
-import skimage.io
 from datetime import date, datetime
-from PIL import Image
-from tensorflow.keras.preprocessing.image import array_to_img
-import params as spectro_params
-import tensorflow as tf
-import soundfile as sf
-import resampy
-from tf_features_extractor import spectrogram_extractor
+
+######################################################################
+#
+# ENVIRONMENTAL VARIABLES
+#
+######################################################################
+
+warnings.filterwarnings("ignore")
+SR = 16000
+stft_window_seconds: float = 0.025
+stft_hop_seconds: float = 0.010
+N_FFT =  int(np.ceil(SR * stft_window_seconds))
+HOP_LENGTH = int(np.ceil(SR * stft_hop_seconds))
+N_MELS = 64
+SILENCE = 0.0018
+SAMPLE_LENGTH = 0.96  # s
+SAMPLE_SIZE = int(np.ceil(SR * SAMPLE_LENGTH))
+NOISE_RATIO = 0.3
+PAD = int(np.ceil(SR * SAMPLE_LENGTH* 0.5)) #50% of signal lenght overlapping
+N_MFCC = 14
+AUGMENT = "extracted-data/Noises/"
+
 
 
 ######################################################################

@@ -136,7 +136,7 @@ def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir='', file=No
 
         with tqdm(total=len(threads)) as pbar:
             while len(threads) > 0:
-                 if len(threads) < n:
+                if len(threads) < n:
                     n = len(threads)
                     warnings.warn(
                         f"Low amount of files to process, lower than number of CPU cores, consisting of {n}",

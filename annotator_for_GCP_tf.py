@@ -1,14 +1,15 @@
 import os
-import warnings
-import librosa.display
 from google.cloud import storage
 import json
 import uuid
-from datetime import date, datetime
-from helpers import spectrogram_image_tf, datetimeConverter, cast_matrix
+from datetime import datetime
+from helpers import datetimeConverter, cast_matrix
+from audio_utils import spectrogram_image_tf
 from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2
 import params as spectro_params
 from tqdm import tqdm
+from cocoSet_params import info, licenses, categories
+import shutil
 
 #credentials
 credential_path = "C:/Users/Administrator/Documents/voicemed-d9a595992992.json"
@@ -40,7 +41,8 @@ if __name__ == '__main__':
         try:
             os.mkdir(f"{dir}")
         except:
-            pass
+            shutil.rmtree(f"{dir}")
+            os.mkdir(f"{dir}")
 
     #loading spectrogram extraction params
     params = spectro_params.Params()
@@ -49,8 +51,7 @@ if __name__ == '__main__':
     storage_client = storage.Client()
     input_bucket = storage_client.get_bucket(input_bucket_name)
     output_bucket = storage_client.get_bucket(output_bucket_name)
-    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir,
-                                                   local_dir='')
+    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir,max_samples=50)
     ######
     # AudioDict struct
     # fileName : (gcp_artifacts_uri, local_path, xmin, xmax)
@@ -64,13 +65,15 @@ if __name__ == '__main__':
             continue
         else:
             fileName = os.path.splitext(f"{file}")[0].rsplit('_', 1)[0]
-            gcp_artifacts_uri = f"gs://{blobDir}/{fileName}.png"
-            local_artifacts_uri = f"{fileDir}/{fileName}.png"
+            gcp_artifacts_uri = f"gs://{blobDir}/{fileName}"
+            local_artifacts_uri = f"{fileDir}/{fileName}"
             for line in open(f"{filePath}", "r"):
                 listWords.append(line.rstrip("\n").split("\t"))
             audioDict[(f"{fileName}")] = (
             f"{gcp_artifacts_uri}", f"{local_artifacts_uri}", cast_matrix(listWords,float))
 
+    images = []
+    annotations = []
     #image and cocoSet processing
     for key, value in tqdm(audioDict.items()):
         audio = value[1] + ".wav"
@@ -83,7 +86,7 @@ if __name__ == '__main__':
 
         N_MELS, N_SPECTRO = spectro_shape[0], spectro_shape[1]
         frames_per_spectro = len_signal / N_SPECTRO
-        # ratio behind is spectro:pixel is 1:1
+        # spectro:pixel is 1:1
         # in this way I find how many frames are contained in a pixel
         # in order to say how many pixels are in the bounding boxes
         imageUuid = uuid.uuid4().hex
