@@ -30,29 +30,29 @@ if __name__ == '__main__':
 
     #GCP bucket prefixes
     cough_prefix = f"{prefix}"
-    images_prefix = f"{prefix}/{params.mel_bands}/images"
-    annotation_prefix = f"{prefix}/{params.mel_bands}/cocoset"
-    dataset_prefix = f"{prefix}/{params.mel_bands}/trainvalSet"
+    images_prefix = f"{prefix}/{params.mel_bands}_mels/images"
+    annotation_prefix = f"{prefix}/{params.mel_bands}_mels/cocoset"
+    dataset_prefix = f"{prefix}/{params.mel_bands}_mels/trainvalSet"
 
     #tmp paths
-    image_path = fr'{annotation_master_dir}/images'
-    annotation_path = fr'{annotation_master_dir}/coco_notations'
-    dataset_path = fr'{annotation_master_dir}/trainvalSet'
+    image_path = fr'{annotation_master_dir}/{params.mel_bands}_mels/images'
+    annotation_path = fr'{annotation_master_dir}/{params.mel_bands}_mels/coco_notations'
+    dataset_path = fr'{annotation_master_dir}/{params.mel_bands}_mels/trainvalSet'
     tmp_dirs = [image_path, annotation_path, dataset_path]
 
     #cough extraction
     storage_client = storage.Client()
     input_bucket = storage_client.get_bucket(input_bucket_name)
     output_bucket = storage_client.get_bucket(output_bucket_name)
-    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir)
+    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir, max_samples=50)
 
     #tmp dirs creation
     for dir in tmp_dirs:
         try:
-            os.mkdir(f"{dir}")
+            os.makedirs(f"{dir}")
         except:
             shutil.rmtree(f"{dir}")
-            os.mkdir(f"{dir}")
+            os.makedirs(f"{dir}")
 
     ######
     # AudioDict struct
@@ -77,6 +77,7 @@ if __name__ == '__main__':
     images = []
     annotations = []
     #image and cocoSet processing
+    test_time = datetime.now()
     for key, value in tqdm(audioDict.items()):
         audio = value[1] + ".wav"
         annotation_events = value[-1]
@@ -117,6 +118,7 @@ if __name__ == '__main__':
             }
             annotations.append(annotation)
 
+    print(f"Total time is {datetime.now() - test_time}")
     # build-up the COCO-dataset
     voicemedCocoSet = {
         "info": info,
