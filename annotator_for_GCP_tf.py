@@ -1,67 +1,17 @@
 import os
+import ray
 import shutil
-import multiprocessing
-import warnings
+import psutil
 import json
-import uuid
 from datetime import datetime
 from tqdm import tqdm
 from google.cloud import storage
 import params as spectro_params
 from cocoSet_params import info, licenses, categories
 from helpers import datetimeConverter, cast_matrix
-from audio_utils import spectrogram_image_tf
+from tf_features_extractor import Annotator
 from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2
 
-
-def annotation_factory(
-    fileName: str,
-    fileInfo: tuple,
-    image_path: str,
-    params: object,
-    annotations: list,
-    images: list
-):
-    audio = fileInfo[1] + ".wav"
-    annotation_events = fileInfo[-1]
-
-    # convert to PNG
-    fileNameOut = f"{fileName}.png"
-    out = fr"{image_path}/{fileNameOut}"
-    len_signal, spectro_shape = spectrogram_image_tf(audio, params=params, out=out)
-
-    N_MELS, N_SPECTRO = spectro_shape[0], spectro_shape[1]
-    frames_per_spectro = len_signal / N_SPECTRO
-    # spectro:pixel is 1:1
-    # in this way I find how many frames are contained in a pixel
-    # in order to say how many pixels are in the bounding boxes
-    imageUuid = uuid.uuid4().hex
-    image = {
-        "license": 1,
-        "file_name": fileName,
-        "coco_url": f"{fileInfo[0]}.png",
-        "height": N_MELS,
-        "width": N_SPECTRO,
-        "date_captured": datetime.now(tz=None),
-        "id": imageUuid
-    }
-    images.append(image)
-
-    for event in annotation_events:
-        starting_event, ending_event = event[0], event[-1]
-        starting_point = starting_event * params.sample_rate / frames_per_spectro #events in seconds
-        ending_point = ending_event * params.sample_rate / frames_per_spectro
-        annotation = {
-            "iscrowd": 0,
-            "image_id": imageUuid,
-            "bbox": [starting_point, N_MELS, ending_point - starting_point, N_MELS],
-            # top left x & y position, width and height
-            "category_id": 0,
-            "id": uuid.uuid1()
-        }
-        annotations.append(annotation)
-
-    return images, annotations
 
 #credentials
 credential_path = "C:/Users/Administrator/Documents/voicemed-d9a595992992.json"
@@ -96,7 +46,7 @@ if __name__ == '__main__':
     storage_client = storage.Client()
     input_bucket = storage_client.get_bucket(input_bucket_name)
     output_bucket = storage_client.get_bucket(output_bucket_name)
-    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir)
+    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir, max_samples=20)
 
     #tmp dirs creation
     for dir in tmp_dirs:
@@ -126,39 +76,20 @@ if __name__ == '__main__':
             audioDict[(f"{fileName}")] = (
             f"{gcp_artifacts_uri}", f"{local_artifacts_uri}", cast_matrix(listWords,float))
 
-    manager = multiprocessing.Manager()
-    threads = []
-    images = manager.list()
-    annotations = manager.list()
     #image and cocoSet processing
+    # init ray
+    num_cpus = psutil.cpu_count(logical=False)
+    ray.init(num_cpus=num_cpus)
+    ray.put(audioDict)
+    actors = [Annotator.remote(params, i) for i in range(len(audioDict))]
     test_time = datetime.now()
-    for key, value in audioDict.items():
-        p = multiprocessing.Process(target=annotation_factory,
-                                    args=(key, value, image_path, params, annotations, images))
-        threads.append(p)
-    print('Processing spetro images and building annotations')
-    with tqdm(total=len(threads)) as pbar:
-        cores = multiprocessing.cpu_count()
-        n = cores
-        while len(threads) > 0:
-            if len(threads) < n:
-                n = len(threads)
-                warnings.warn(
-                    f"Low amount of files to process, lower than number of CPU cores, consisting of {n}",
-                    ResourceWarning)
-            for i in range(n):
-                try:
-                    threads[i].start()
-                except:
-                    warnings.warn(f"Low amount of files to process, lower than number of CPU cores, consisting of {n}",
-                                  ResourceWarning)
-                    n = len(threads)
-                    pass
-            for i in range(n):
-                threads[i].join()
-                pbar.update(1)
 
-            threads = threads[n:]
+    ray.get([actor.annotation_factory.remote(fileName,fileInfo,image_path)
+             for actor, (fileName,fileInfo) in zip(actors,audioDict.items())])
+    print(Annotator.images)
+    annotations_tmp.append(annotations_tmp)
+    print('Processing spetro images and building annotations')
+
 
     print(f"Total time is {datetime.now() - test_time}")
     # build-up the COCO-dataset
