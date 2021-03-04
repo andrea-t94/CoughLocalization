@@ -14,12 +14,38 @@
 # ==============================================================================
 
 """Core model definition of YAMNet."""
+import sys
 import numpy as np
 import ray
 import tensorflow as tf
 from tensorflow.keras import Model, layers
 from audio_utils import mono_to_color, open_fat_image
 import tf_features as features_lib
+import soundfile as sf
+import resampy
+import uuid
+from datetime import datetime
+
+
+def spectrogram_extractor(params, amplitude_spectro=False):
+  """Defines the YAMNet waveform-to-class-scores model.
+
+  Args:
+    params: An instance of Params containing hyperparameters.
+
+  Returns:
+    A model accepting (num_samples,) waveform input and emitting:
+    - log_mel_spectrogram: (num_spectrogram_frames, num_mel_bins) spectrogram feature matrix
+  """
+  waveform = layers.Input(batch_shape=(None,), dtype=tf.float32)
+  waveform_padded = features_lib.pad_waveform(waveform, params)
+  log_mel_spectrogram, features = features_lib.waveform_to_log_mel_spectrogram_patches(
+    waveform_padded, params, amplitude_spectro)
+  frames_model = Model(
+    name='spectro_extractor', inputs=waveform,
+    outputs=[log_mel_spectrogram, features])
+
+  return frames_model
 
 @ray.remote
 class Annotator(object):
@@ -27,30 +53,10 @@ class Annotator(object):
     if sys.platform == 'linux':
       psutil.Process().cpu_affinity([i])
     # Load the extractor and initialize annotations params and variables.
-    self.extractor = spectrogram_extractor(params, amplitude_spectro=True)
     self.params = params
+    self.extractor = spectrogram_extractor(self.params, amplitude_spectro=True)
     self.annotations = []
     self.images = []
-
-  def spectrogram_extractor(self, amplitude_spectro=False):
-    """Defines the YAMNet waveform-to-class-scores model.
-
-    Args:
-      params: An instance of Params containing hyperparameters.
-
-    Returns:
-      A model accepting (num_samples,) waveform input and emitting:
-      - log_mel_spectrogram: (num_spectrogram_frames, num_mel_bins) spectrogram feature matrix
-    """
-    waveform = layers.Input(batch_shape=(None,), dtype=tf.float32)
-    waveform_padded = features_lib.pad_waveform(waveform, self.params)
-    log_mel_spectrogram, features = features_lib.waveform_to_log_mel_spectrogram_patches(
-      waveform_padded, self.params, amplitude_spectro)
-    frames_model = Model(
-      name='spectro_extractor', inputs=waveform,
-      outputs=[log_mel_spectrogram, features])
-
-    return frames_model
 
   def spectrogram_image_tf(self, audio, out, binary=False):
     '''based on tf, convert audio in logmel-spectrogram of dimension (N_MELS, N_SPECTRO) and subsequently into immage of dimension (N_MELS, N_SPECTRO) pixels'''
@@ -66,7 +72,7 @@ class Annotator(object):
     if sr != self.params.sample_rate:
       waveform = resampy.resample(waveform, sr, self.params.sample_rate)
       len_signal = len(waveform)
-    spectrogram, features = extractor(waveform)
+    spectrogram, features = self.extractor(waveform)
 
     # spectrogram reshaping
     spectrogram = tf.transpose(spectrogram)
@@ -98,7 +104,7 @@ class Annotator(object):
     # convert to PNG
     fileNameOut = f"{fileName}.png"
     out = fr"{image_path}/{fileNameOut}"
-    len_signal, spectro_shape = spectrogram_image_tf(audio, self.params, out=out)
+    len_signal, spectro_shape = self.spectrogram_image_tf(audio, out, False)
 
     N_MELS, N_SPECTRO = spectro_shape[0], spectro_shape[1]
     frames_per_spectro = len_signal / N_SPECTRO
