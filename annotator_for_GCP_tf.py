@@ -12,6 +12,15 @@ from helpers import datetimeConverter, cast_matrix
 from tf_features_extractor import Annotator
 from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2
 
+import itertools
+
+def chunked(it, size):
+    it = iter(it)
+    while True:
+        p = tuple(itertools.islice(it, size))
+        if not p:
+            break
+        yield p
 
 #credentials
 credential_path = "C:/Users/Administrator/Documents/voicemed-d9a595992992.json"
@@ -23,6 +32,7 @@ output_bucket_name = 'voicemed-ml-processed-data'
 prefix = "COUGHVIDannotated"
 cocoSetName = "voicemedCocoSet"
 annotation_master_dir = r'C:/Users/Administrator/Desktop/tmp'
+version_number = 3
 
 
 if __name__ == '__main__':
@@ -31,7 +41,7 @@ if __name__ == '__main__':
     params = spectro_params.Params()
 
     #GCP bucket prefixes
-    cough_prefix = f"{prefix}"
+    cough_prefix = f"{prefix}/v_{version_number}"
     images_prefix = f"{prefix}/{params.mel_bands}_mels/images"
     annotation_prefix = f"{prefix}/{params.mel_bands}_mels/cocoset"
     dataset_prefix = f"{prefix}/{params.mel_bands}_mels/trainvalSet"
@@ -81,13 +91,13 @@ if __name__ == '__main__':
     num_cpus = psutil.cpu_count(logical=False)
     ray.init(num_cpus=num_cpus)
     ray.put(audioDict)
-    actors = [Annotator.remote(params, i) for i in range(len(audioDict))]
+    actors = [Annotator.remote(params, i) for i in range(num_cpus)]
     test_time = datetime.now()
-
-    ray.get([actor.annotation_factory.remote(fileName,fileInfo,image_path)
-             for actor, (fileName,fileInfo) in zip(actors,audioDict.items())])
-    print(Annotator.images)
-    annotations_tmp.append(annotations_tmp)
+    for chunk in chunked(audioDict.iteritems(), num_cpus):
+        total = ray.get([actor.annotation_factory.remote(fileName,fileInfo,image_path)
+                 for actor, (fileName,fileInfo) in zip(actors,chunk.items())])
+        print(total)
+        annotations_tmp.append(annotations_tmp)
     print('Processing spetro images and building annotations')
 
 
