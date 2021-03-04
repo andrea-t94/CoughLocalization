@@ -1,41 +1,18 @@
-import time
 import ray
-import psutil
+ray.init() # Only call this once.
 
-num_cpus = psutil.cpu_count(logical=False)
-ray.init(num_cpus=num_cpus)
 @ray.remote
-class MessageActor(object):
+class Counter(object):
     def __init__(self):
-        self.messages = []
+        self.n = 0
 
-    def add_message(self, message):
-        self.messages.append(message)
+    def increment(self):
+        self.n += 1
 
-    def get_and_clear_messages(self):
-        messages = self.messages
-        self.messages = []
-        return messages
+    def read(self):
+        return self.n
 
-
-# Define a remote function which loops around and pushes
-# messages to the actor.
-@ray.remote
-def worker(message_actor, j):
-    for i in range(100):
-        time.sleep(1)
-        message_actor.add_message.remote(
-            "Message {} from worker {}.".format(i, j))
-
-
-# Create a message actor.
-message_actor = MessageActor.remote()
-
-# Start 3 tasks that push messages to the actor.
-[worker.remote(message_actor, j) for j in range(3)]
-
-# Periodically get the messages and print them.
-for _ in range(100):
-    new_messages = ray.get(message_actor.get_and_clear_messages.remote())
-    print("New messages:", new_messages)
-    time.sleep(1)
+counters = [Counter.remote() for i in range(4)]
+[c.increment.remote() for c in counters]
+futures = [c.read.remote() for c in counters]
+print(ray.get(futures)) # [1, 1, 1, 1]
