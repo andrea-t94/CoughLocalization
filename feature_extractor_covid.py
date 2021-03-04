@@ -48,7 +48,7 @@ if __name__ == '__main__':
     storage_client = storage.Client()
     input_bucket = storage_client.get_bucket(input_bucket_name)
     output_bucket = storage_client.get_bucket(output_bucket_name)
-    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir, max_samples=20)
+    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, prefix, root_path=annotation_master_dir, max_samples=20)
 
     #tmp dirs creation
     for dir in tmp_dirs:
