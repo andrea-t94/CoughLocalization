@@ -1,20 +1,20 @@
-import itertools
 
-def chunked(it, size):
-    it = iter(it)
-    while True:
-        p = tuple(itertools.islice(it, size))
-        if not p:
-            break
-        yield p
+import ray
+ray.init() # Only call this once.
 
-batch_size = 2
-thisdict = {
-  "brand": "Ford",
-  "electric": False,
-  "year": 1964,
-  "colors": ["red", "white", "blue"]
-}
-for chunk in chunked(thisdict.items(), batch_size):
-    for key, val in chunk:
-        print(key,val)
+@ray.remote
+class Counter(object):
+    def __init__(self):
+        self.n = 0
+
+    def increment(self):
+        self.n += 1
+
+    def read(self):
+        return self.n
+
+counters = [Counter.remote() for i in range(4)]
+[c.increment.remote() for c in counters]
+futures = [c.read.remote() for c in counters]
+print(ray.get(futures)) # [1, 1, 1, 1]
+
