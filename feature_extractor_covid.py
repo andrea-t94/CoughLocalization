@@ -14,16 +14,16 @@ from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2
 
 
 #credentials
-credential_path = "C:/Users/Administrator/Documents/voicemed-d9a595992992.json"
+credential_path = "/Users/andreatamburri/Documents/voicemed-d9a595992992.json"
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
 
 #input variables
+version_number = 1
 input_bucket_name = 'voicemed-ml-raw-data'
 output_bucket_name = 'voicemed-ml-processed-data'
 prefix = "COUGHVIDannotated"
 covidSetName = "voicemedCovidSet"
-annotation_master_dir = fr'C:/Users/Administrator/Desktop/tmp/covid/{version_number}'
-version_number = 1
+annotation_master_dir = fr'/Users/andreatamburri/Desktop/tmp/{version_number}'
 
 if __name__ == '__main__':
 
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     spectro_path = fr'{annotation_master_dir}/spectrograms/{params.mel_bands}_mels/raw_spectro'
     mfcc_path = fr'{annotation_master_dir}/mfccs/{params.n_mfcc}_n_mfcc/raw_mfcc'
     spectro_dataset_path = fr'{annotation_master_dir}/spectrograms/{params.mel_bands}_mels/trainvalSet'
-    mfcc_dataset_path = fr'{annotation_master_dir}/mfccs/{params.n_mffc}_n_mfcc/trainvalSet'
+    mfcc_dataset_path = fr'{annotation_master_dir}/mfccs/{params.n_mfcc}_n_mfcc/trainvalSet'
     tmp_dirs = [spectro_path, mfcc_path, spectro_dataset_path, mfcc_dataset_path]
 
     #cough extraction
