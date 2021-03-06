@@ -1,20 +1,15 @@
 """ REPOSITORY OF UTILS FUNCTIONS """
 """ COMPRISING FUNTIONS FOR COMMUNICATING WITH GCP ENVIRONMENT"""
 
-import datetime
 import os
-import subprocess
-import sys
-import pandas as pd
-import numpy as np
 import shutil
 from google.cloud import storage
 from tqdm import tqdm
 import multiprocessing
-import math
 import warnings
 from google.cloud import storage
 import threading
+from helpers import cast_matrix
 
 ######################################################################
 #
@@ -25,6 +20,7 @@ import threading
 
 def file_upload_to_bucket(blob, file_path):
     blob.upload_from_filename(file_path)
+
 
 def upload_to_bucket_v2(bucket_name, prefix, root_path='', file=None, local_dir=''):
     """ Upload file into a bucket, defined by bucket_name and prefix, the folder inside a bucket"""
@@ -75,9 +71,9 @@ def upload_to_bucket_v2(bucket_name, prefix, root_path='', file=None, local_dir=
                 threads = threads[n:]
 
 
-
 def file_download_from_bucket(blob, file_path):
     blob.download_to_filename(file_path)
+
 
 def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir='', file=None, max_samples=100000,
                            labels=['']):
@@ -150,3 +146,24 @@ def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir='', file=No
                 threads = threads[n:]
 
         return (extracted, blob_names)
+
+
+def buildAudioDict(local_dir: list, input_cloud_dir: list, output_bucket_name: str, ):
+    '''retrieve all the relevant information of an audio file as {fileName: (gcp_outputs_uri, local_outputs_uri, (annotations)}'''
+    ''' usually works well combined with extract_from_bucket_v2 that output all relevant info abount local and cloud dir '''
+    audioMappingDict = {}
+    for filePath, blobPath in zip(local_dir,input_cloud_dir):
+        listWords = []
+        file, fileDir = os.path.split(filePath)[-1], os.path.split(filePath)[0]
+        blobDir = os.path.split(blobPath)[0]
+        if os.path.splitext(file)[-1] != ".txt":
+            continue
+        else:
+            fileName = os.path.splitext(f"{file}")[0].rsplit('_', 1)[0]
+            gcp_outputs_uri = f"gs://{output_bucket_name}/{blobDir}/{fileName}"
+            local_outputs_uri = f"{fileDir}/{fileName}"
+            for line in open(f"{filePath}", "r"):
+                listWords.append(line.rstrip("\n").split("\t"))
+            audioDict[(f"{fileName}")] = (
+            f"{gcp_outputs_uri}", f"{local_outputs_uri}", cast_matrix(listWords,float))
+    return audioMappingDict

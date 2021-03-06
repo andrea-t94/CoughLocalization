@@ -8,7 +8,7 @@ from tqdm import tqdm
 import multiprocessing
 import math
 import warnings
-from datetime import date, datetime
+from datetime import datetime
 
 ######################################################################
 #
@@ -35,18 +35,31 @@ AUGMENT = "extracted-data/Noises/"
 
 ######################################################################
 #
-# FEATURE EXTRACTION FUNCTIONS
+# HELPER FUNCTIONS
 #
 ######################################################################
+
+
+def dictChunked(it, size):
+    ''' slice a dictionary in chunck to iterate'''
+    it = iter(it)
+    while True:
+        p = tuple(islice(it, size))
+        if not p:
+            break
+        yield p
+
 
 def datetimeConverter(o):
     '''convert datetime into string format'''
     if isinstance(o, datetime):
         return o.__str__()
 
+
 def cast_list(test_list, data_type):
     '''type cast list'''
     return list(map(data_type, test_list))
+
 
 def cast_matrix(test_matrix, data_type):
     '''type cast matrix'''
@@ -65,7 +78,6 @@ def load_noises():
         noise, _ = librosa.load(AUGMENT + cat + "/" + noises[cat][i], sr=SR)
         ns.append(noise)
     return ns
-
 
 
 def process(audio, data, i, spectro, n_aug, pad=SAMPLE_SIZE):
@@ -189,3 +201,20 @@ def generate_dataset(folder, output_folder, output_name, spectro=True, start=0, 
 
         start_point += batch
         end_point += batch
+
+
+def yoloSetConverter(input_images, input_annotations):
+    ''' convert COCO-notation in txt file valid for YOLO training'''
+    for image in tqdm(input_images):
+        image_id = image["id"]
+        image_url = image["coco_url"]
+        anno = image_url
+        for annotation in input_annotations:
+            if annotation["image_id"] == image_id:
+                cat_id = annotation["category_id"]
+                xmin = int(annotation["bbox"][0])
+                xmax = int(annotation["bbox"][0] + annotation["bbox"][2])
+                ymin = annotation["bbox"][1] - annotation["bbox"][3]
+                ymax = annotation["bbox"][1]
+                anno += ' ' + ','.join([str(xmin), str(ymin), str(xmax), str(ymax), str(cat_id)])
+        f.write(anno + "\n")
