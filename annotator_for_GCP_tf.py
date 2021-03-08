@@ -3,25 +3,16 @@ import ray
 import shutil
 import psutil
 import json
-import itertools
+from itertools import chain, zip_longest, islice
 from datetime import datetime
 from tqdm import tqdm
 from google.cloud import storage
 import params as spectro_params
 from cocoSet_params import info, licenses, categories
-from helpers import datetimeConverter, cast_matrix
+from helpers import datetimeConverter, cast_matrix, dictChunked
 from tf_features_extractor import Annotator
-from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2
+from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2, buildAudioDict
 
-
-
-def chunked(it, size):
-    it = iter(it)
-    while True:
-        p = tuple(itertools.islice(it, size))
-        if not p:
-            break
-        yield p
 
 #credentials
 credential_path = "/Users/andreatamburri/Documents/voicemed-d9a595992992.json"
@@ -58,7 +49,7 @@ if __name__ == '__main__':
     storage_client = storage.Client()
     input_bucket = storage_client.get_bucket(input_bucket_name)
     output_bucket = storage_client.get_bucket(output_bucket_name)
-    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir)
+    local_dirs, gcp_dirs = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir)
 
     #tmp dirs creation
     for dir in tmp_dirs:
@@ -72,21 +63,7 @@ if __name__ == '__main__':
     # AudioDict struct
     # fileName : (gcp_artifacts_uri, local_path, xmin, xmax)
     ######
-    audioDict = {}
-    for filePath, blobPath in zip(extracted,blob_names):
-        listWords = []
-        file, fileDir = os.path.split(filePath)[-1], os.path.split(filePath)[0]
-        blobDir = os.path.split(blobPath)[0]
-        if os.path.splitext(file)[-1] != ".txt":
-            continue
-        else:
-            fileName = os.path.splitext(f"{file}")[0].rsplit('_', 1)[0]
-            gcp_artifacts_uri = f"gs://{blobDir}/{fileName}"
-            local_artifacts_uri = f"{fileDir}/{fileName}"
-            for line in open(f"{filePath}", "r"):
-                listWords.append(line.rstrip("\n").split("\t"))
-            audioDict[(f"{fileName}")] = (
-            f"{gcp_artifacts_uri}", f"{local_artifacts_uri}", cast_matrix(listWords,float))
+    audioDict = buildAudioDict(local_dirs, gcp_dirs, output_bucket_name)
 
     #image and cocoSet processing
     images = []
@@ -98,16 +75,17 @@ if __name__ == '__main__':
     actors = [Annotator.remote(params, i) for i in range(num_cpus)]
     test_time = datetime.now()
     print('Processing spetro images and building annotations')
-    for chunk in chunked(audioDict.items(), size=num_cpus):
+    for chunk in dictChunked(audioDict.items(), size=num_cpus):
         total = ray.get([actor.annotation_factory.remote(fileName,fileInfo,image_path)
                  for actor, (fileName,fileInfo) in zip(actors,chunk)])
         images_tmp, annotations_tmp = zip(*total)
-        images_tmp = list(itertools.chain(*list(images_tmp)))
-        annotations_tmp = list(itertools.chain(*list(annotations_tmp)))
-    for image_tmp, annotation_tmp in zip(images_tmp,annotations_tmp):
-        images.append(image_tmp)
-        annotations.append(annotation_tmp)
-    print(images)
+        images_tmp = list(chain(*list(images_tmp)))
+        annotations_tmp = list(chain(*list(annotations_tmp)))
+    for image_tmp, annotation_tmp in zip_longest(images_tmp, annotations_tmp, fillvalue=None):
+        if images_tmp != None:
+            images.append(image_tmp)
+        if annotation_tmp != None:
+            annotations.append(annotation_tmp)
     print(f"Total time is {datetime.now() - test_time}")
 
     # build-up the COCO-dataset
@@ -124,20 +102,7 @@ if __name__ == '__main__':
 
     #building training-validation set as txt file of path,xmin,xmax,ymin,ymax
     with open(f"{dataset_path}/{cocoSetName}.txt", 'w') as f:
-        for image in tqdm(images):
-            print(image)
-            image_id = image["id"]
-            image_url = image["coco_url"]
-            anno = image_url
-            for annotation in annotations:
-                if annotation["image_id"] == image_id:
-                    cat_id = annotation["category_id"]
-                    xmin = int(annotation["bbox"][0])
-                    xmax = int(annotation["bbox"][0] + annotation["bbox"][2])
-                    ymin = annotation["bbox"][1] - annotation["bbox"][3]
-                    ymax = annotation["bbox"][1]
-                    anno += ' ' + ','.join([str(xmin), str(ymin), str(xmax), str(ymax), str(cat_id)])
-            f.write(anno + "\n")
+        yoloSetConverter(input_images=images, input_annotations=annotations)
 
     #upload to GCP buckets
     upload_to_bucket_v2(output_bucket_name, images_prefix, root_path= image_path)

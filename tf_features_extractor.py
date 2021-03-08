@@ -55,8 +55,6 @@ class Annotator(object):
     # Load the extractor and initialize annotations params and variables.
     self.params = params
     self.extractor = spectrogram_extractor(self.params, amplitude_spectro=True)
-    self.annotations = []
-    self.images = []
 
   def spectrogram_image_tf(self, audio, out, binary=False):
     '''based on tf, convert audio in logmel-spectrogram of dimension (N_MELS, N_SPECTRO) and subsequently into immage of dimension (N_MELS, N_SPECTRO) pixels'''
@@ -98,6 +96,8 @@ class Annotator(object):
           fileInfo: tuple,
           image_path: str,
   ):
+    file_images = []
+    file_annotations = []
     audio = fileInfo[1] + ".wav"
     annotation_events = fileInfo[-1]
 
@@ -121,7 +121,7 @@ class Annotator(object):
       "date_captured": datetime.now(tz=None),
       "id": imageUuid
     }
-    self.images.append(image)
+    file_images.append(image)
 
     for event in annotation_events:
       starting_event, ending_event = event[0], event[-1]
@@ -133,8 +133,8 @@ class Annotator(object):
         "bbox": [starting_point, N_MELS, ending_point - starting_point, N_MELS],
         # top left x & y position, width and height
         "category_id": 0,
-        "id": uuid.uuid1()
+        "id": uuid.uuid4().hex
       }
-      self.annotations.append(annotation)
+      file_annotations.append(annotation)
 
-    return self.images, self.annotations
+    return file_images, file_annotations
