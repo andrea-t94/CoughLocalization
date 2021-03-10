@@ -26,7 +26,6 @@ def dictChunked(it, size):
         yield p
 
 
-        
 def yoloSetConverter(input_images, input_annotations):
     ''' convert COCO-notation in txt file valid for YOLO training'''
     for image in tqdm(input_images):
@@ -42,6 +41,7 @@ def yoloSetConverter(input_images, input_annotations):
                 ymax = annotation["bbox"][1]
                 anno += ' ' + ','.join([str(xmin), str(ymin), str(xmax), str(ymax), str(cat_id)])
         f.write(anno + "\n")
+
 
 #credentials
 credential_path = "/Users/andreatamburri/Documents/voicemed-d9a595992992.json"
@@ -181,6 +181,8 @@ if __name__ == '__main__':
     # np.save(f"{mfcc_dataset_path}/trainValSet.npy",trainValSet)
 
 
-
-
+    # upload toGCP buckets
+    upload_to_bucket_v2(output_bucket_name, images_prefix, root_path=image_path)
+    upload_to_bucket_v2(output_bucket_name, annotation_prefix, root_path=annotation_path)
+    upload_to_bucket_v2(output_bucket_name, dataset_prefix, root_path=dataset_path)
 
