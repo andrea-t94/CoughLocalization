@@ -10,19 +10,22 @@ from google.cloud import storage
 import params as spectro_params
 from cocoSet_params import info, licenses, categories
 from helpers import datetimeConverter, cast_matrix
-from tf_features_extractor import Annotator
+from tf_features_extractor import Extractor, Cropper
 from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2
 import uuid
+import soundfile as sf
+import numpy as np
 
 
-
-def chunked(it, size):
+def dictChunked(it, size):
     it = iter(it)
     while True:
         p = tuple(islice(it, size))
         if not p:
             break
         yield p
+
+
         
 def yoloSetConverter(input_images, input_annotations):
     ''' convert COCO-notation in txt file valid for YOLO training'''
@@ -39,43 +42,53 @@ def yoloSetConverter(input_images, input_annotations):
                 ymax = annotation["bbox"][1]
                 anno += ' ' + ','.join([str(xmin), str(ymin), str(xmax), str(ymax), str(cat_id)])
         f.write(anno + "\n")
-    
 
 #credentials
 credential_path = "/Users/andreatamburri/Documents/voicemed-d9a595992992.json"
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
+    
 
 #input variables
+version_number = 1
 input_bucket_name = 'voicemed-ml-raw-data'
 output_bucket_name = 'voicemed-ml-processed-data'
 prefix = "COUGHVIDannotated"
-cocoSetName = "voicemedCocoSet"
-annotation_master_dir = '/Users/andreatamburri/Desktop/test'
-version_number = 3
-
-
+covidSetName = "voicemedCovidSet"
+annotation_master_dir = fr'/Users/andreatamburri/Desktop/tmp/covidClass/v_{version_number}'
+features_to_compute = ['mfcc']
 
 if __name__ == '__main__':
 
-    # loading spectrogram extraction params
+    coughvidLabelMap = {
+        'healthy': 0,
+        'COVID19': 1
+    }
+
+    #loading spectrogram extraction params
     params = spectro_params.Params()
 
+    #loading Extractor
+    features_extractor = Extractor(params, features_to_compute, 1)
+    spectrogram, mfcc, features = features_extractor.feature_tf('/Users/andreatamburri/Desktop/tmp/covidClass/v_1/COUGHVIDannotated/COVID19/covid_1/3deed1f8-085b-4531-92f1-c03ec500802a.wav')
+    print(spectrogram.shape)
+    print(mfcc.shape)
+    print(features.shape)
+
     #GCP bucket prefixes
-    cough_prefix = f"{prefix}"
-    images_prefix = f"{prefix}/v_{version_number}/{params.mel_bands}_mels/images"
-    annotation_prefix = f"{prefix}/v_{version_number}/{params.mel_bands}_mels/cocoset"
-    dataset_prefix = f"{prefix}/v_{version_number}/{params.mel_bands}_mels/trainvalSet"
+    cough_prefix = f"{prefix}/covid/{version_number}"
+    crop_prefix = f"{prefix}/cropped_samples"
+    spectro_prefix = f"{prefix}/spectrograms/{params.mel_bands}_mels/raw_spectro"
+    mfcc_prefix = f"{prefix}/mfccs/{params.n_mfcc}_n_mfcc/raw_mfcc"
+    spectro_dataset_prefix = f"{prefix}/spectrograms/{params.mel_bands}_mels/trainvalSet"
+    mfcc_dataset_prefix = f"{prefix}/mfccs/{params.n_mfcc}_n_mfcc/trainvalSet"
 
     #tmp paths
-    image_path = fr'{annotation_master_dir}/{params.mel_bands}_mels/images'
-    annotation_path = fr'{annotation_master_dir}/{params.mel_bands}_mels/coco_notations'
-    dataset_path = fr'{annotation_master_dir}/{params.mel_bands}_mels/trainvalSet'
-    tmp_dirs = [image_path, annotation_path, dataset_path]
-
-    #cough extraction
-    storage_client = storage.Client()
-    input_bucket = storage_client.get_bucket(input_bucket_name)
-    output_bucket = storage_client.get_bucket(output_bucket_name)
+    crop_path = fr'{annotation_master_dir}/crop_samples'
+    spectro_path = fr'{annotation_master_dir}/spectrograms/{params.mel_bands}_mels/raw_spectro'
+    mfcc_path = fr'{annotation_master_dir}/mfccs/{params.n_mfcc}_n_mfcc/raw_mfcc'
+    spectro_dataset_path = fr'{annotation_master_dir}/spectrograms/{params.mel_bands}_mels/trainvalSet'
+    mfcc_dataset_path = fr'{annotation_master_dir}/mfccs/{params.n_mfcc}_n_mfcc/trainvalSet'
+    tmp_dirs = [crop_path, spectro_path, mfcc_path, spectro_dataset_path, mfcc_dataset_path]
 
     #tmp dirs creation
     for dir in tmp_dirs:
@@ -86,53 +99,88 @@ if __name__ == '__main__':
             os.makedirs(f"{dir}")
 
 
-    with open(f'{annotation_master_dir}/audioDict.txt', 'r') as file:
+    with open(fr'/Users/andreatamburri/Desktop/test/audioDict.txt', 'r') as file:
         audioDict = json.load(file)
     print(audioDict['3116448f-f316-4939-a492-0518f3dd06d7'])
+    test_val = audioDict['3116448f-f316-4939-a492-0518f3dd06d7'][0]
+    label = test_val.split(f"{prefix}")[-1].split("/")[1]
+    print(label)
 
-    # image and cocoSet processing
-    images = []
-    annotations = []
+    ######
+    # CropAudioDict struct
+    # cropFilePath :(fileName, labelName, label)
+    ######
+
+    # for key,val in audioDict.items():
+    #     #info retrieval
+    #     filePath = f'{val[1]}.wav'
+    #     gcpPath = val[0]
+    #     fileName = key
+    #     annotations = val[-1]
+    #     labelName = gcpPath.split(f"{prefix}")[-1].split("/")[1]
+    #     label = coughvidLabelMap[labelName]
+    #     # Decode the WAV file.
+    #     signal, sr = sf.read(filePath, dtype=np.int16)
+    #     for i, annotation in enumerate(annotations):
+    #         starting_point = int(annotation[0]*sr)
+    #         ending_point = int(annotation[1]*sr)+1
+    #         crop_audio_path = f'{crop_path}/{labelName}/{fileName}_{i}.wav'
+    #         signal1, sr = sf.read(filePath, dtype=np.int16, start=starting_point, stop=ending_point)
+    #         try:
+    #             sf.write(crop_audio_path, signal1, sr)
+    #         except:
+    #             os.makedirs(f"{crop_path}/{labelName}")
+    #             sf.write(crop_audio_path, signal1, sr)
+    #         cropAudioDict[crop_audio_path] = (f'{fileName}_{i}',labelName, label)
+
+    # image cropping
+    trainValSetMfcc = []
+    trainValSetSpectro = []
     # init ray
     num_cpus = psutil.cpu_count(logical=False)
-    print(num_cpus)
     ray.init(num_cpus=num_cpus)
-    ray.put(audioDict)
-    actors = [Annotator.remote(params, i) for i in range(num_cpus)]
-
+    ray.put(coughvidLabelMap)
+    actors = [Cropper.remote(params, features_to_compute, i) for i in range(num_cpus)]
     test_time = datetime.now()
-    print('Processing spetro images and building annotations')
-    for chunk in chunked(audioDict.items(), size=num_cpus):
-        result = ray.get([actor.annotation_factory.remote(fileName, fileInfo, image_path)
+    print('cropping audio files')
+    for chunk in dictChunked(audioDict.items(), size=num_cpus):
+        total = ray.get([actor.cropping_factory.remote(fileName, fileInfo, crop_path, coughvidLabelMap,
+                                                       mfcc_path, spectro_path,input_gcp_prefix=prefix)
                          for actor, (fileName, fileInfo) in zip(actors, chunk)])
-        #unpack annotator results
-        images_tmp, annotations_tmp = zip(*result)
-        images_tmp = list(chain(*list(images_tmp)))
-        annotations_tmp = list(chain(*list(annotations_tmp)))
-        for image_tmp in images_tmp:
-            images.append(image_tmp)
-        for annotation_tmp in annotations_tmp:
-            annotations.append(annotation_tmp)
-        print(len(images))
-    print(f"Total time is {datetime.now() - test_time}")
+        trainValSetMfccTmp, trainValSetSpectroTmp = zip(*total)
+        trainValSetMfccTmp = list(chain(*list(trainValSetMfccTmp)))
+        trainValSetSpectroTmp = list(chain(*list(trainValSetSpectroTmp)))
+        for lineMfcc in trainValSetMfccTmp:
+            trainValSetMfcc.append(lineMfcc)
+        for lineSpectro in trainValSetSpectroTmp:
+            trainValSetSpectro.append(lineSpectro)
 
-    # build-up the COCO-dataset
-    voicemedCocoSet = {
-        "info": info,
-        "licenses": licenses,
-        "images": images,
-        "annotations": annotations,
-        "categories": categories
-    }
+    print(len(trainValSetMfcc))
+    trainValSetMfcc = np.array(trainValSetMfcc)
+    np.random.shuffle(trainValSetMfcc)
+    np.save(f"{mfcc_dataset_path}/trainValSet.npy",trainValSetMfcc)
+    print(len(trainValSetSpectro))
+    trainValSetSpectro = np.array(trainValSetSpectro)
+    np.random.shuffle(trainValSetSpectro)
+    np.save(f"{spectro_dataset_path}/trainValSet.npy", trainValSetMfcc)
 
-    with open(fr'{annotation_path}/{cocoSetName}.json', 'w') as json_file:
-        json_dump = json.dump(voicemedCocoSet, json_file, default=datetimeConverter)
 
-    # building training-validation set as txt file of path,xmin,xmax,ymin,ymax
-    with open(f"{dataset_path}/{cocoSetName}.txt", 'w') as f:
-        yoloSetConverter(input_images=images, input_annotations=annotations)
+    # trainValSet = []
+    # for crop_audio, (cropFileName, labelName, label) in cropAudioDict.items():
+    #     spectrogram, mfcc, features = features_extractor.feature_tf(crop_audio)
+    #     np_mfcc = np.array([mfcc,label])
+    #     try:
+    #         np.save(f"{mfcc_path}/{labelName}/{cropFileName}.npy",np_mfcc)
+    #     except:
+    #         os.makedirs(f"{mfcc_path}/{labelName}")
+    #         np.save(f"{mfcc_path}/{labelName}/{cropFileName}.npy",np_mfcc)
+    #     trainValSet.append(np_mfcc)
+    #
+    # trainValSet = np.array(trainValSet)
+    # np.random.shuffle(trainValSet)
+    # np.save(f"{mfcc_dataset_path}/trainValSet.npy",trainValSet)
 
-    # upload toGCP buckets
-    upload_to_bucket_v2(output_bucket_name, images_prefix, root_path=image_path)
-    upload_to_bucket_v2(output_bucket_name, annotation_prefix, root_path=annotation_path)
-    upload_to_bucket_v2(output_bucket_name, dataset_prefix, root_path=dataset_path)
+
+
+
+

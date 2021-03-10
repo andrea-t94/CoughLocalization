@@ -1,130 +1,122 @@
+# from audio data enriched with annotation the script extracts and stores:
+# - cropped audio samples
+# - features, as spectrograms and mfccs, in numpy arrays
+# - training-validtion set
+
 import os
 import ray
 import shutil
 import psutil
-import json
 from datetime import datetime
-from tqdm import tqdm
 from google.cloud import storage
+import json
+from itertools import chain
+import numpy as np
+
 import params as spectro_params
-from cocoSet_params import info, licenses, categories
-from helpers import datetimeConverter, cast_matrix
-from tf_features_extractor import Annotator
+from tf_features_extractor import Extractor, Cropper
 from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2
+from helpers import buildAudioDict, dictChunked
 
-
-#credentials
+# credentials
 credential_path = "/Users/andreatamburri/Documents/voicemed-d9a595992992.json"
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
 
-#input variables
+# input variables
 version_number = 1
 input_bucket_name = 'voicemed-ml-raw-data'
 output_bucket_name = 'voicemed-ml-processed-data'
-prefix = "COUGHVIDannotated"
+prefix = "COUGHVIDannotated" #prefix of the data source to extract
 covidSetName = "voicemedCovidSet"
-annotation_master_dir = fr'/Users/andreatamburri/Desktop/tmp/{version_number}'
+features_to_compute = ['mfcc']
 
 if __name__ == '__main__':
+
+    coughvidLabelMap = {
+        'healthy': 0,
+        'COVID19': 1
+    }
 
     # loading spectrogram extraction params
     params = spectro_params.Params()
 
-    #GCP bucket prefixes
-    cough_prefix = f"{prefix}/covid/{version_number}"
-    spectro_prefix = f"{prefix}/spectrograms/{params.mel_bands}_mels/raw_spectro"
-    mfcc_prefix = f"{prefix}/mfccs/{params.n_mfcc}_n_mfcc/raw_mfcc"
-    spectro_dataset_prefix = f"{prefix}/spectrograms/{params.mel_bands}_mels/trainvalSet"
-    mfcc_dataset_prefix = f"{prefix}/mfccs/{params.n_mfcc}_n_mfcc/trainvalSet"
+    # loading Extractor
+    features_extractor = Extractor(params, features_to_compute, 1)
 
-    #tmp paths
+    # GCP bucket prefixes
+    cough_prefix = f"{prefix}/covidClass/{version_number}"
+    crop_prefix = f"{cough_prefix}/cropped_samples"
+    spectro_prefix = f"{cough_prefix}/spectrograms/{params.mel_bands}_mels/raw_spectro"
+    mfcc_prefix = f"{cough_prefix}/mfccs/{params.n_mfcc}_n_mfcc/raw_mfcc"
+    spectro_dataset_prefix = f"{cough_prefix}/spectrograms/{params.mel_bands}_mels/trainvalSet"
+    mfcc_dataset_prefix = f"{cough_prefix}/mfccs/{params.n_mfcc}_n_mfcc/trainvalSet"
+
+    # tmp paths
+    annotation_master_dir = fr'/Users/andreatamburri/Desktop/tmp/covidClass/v_{version_number}'
+    crop_path = fr'{annotation_master_dir}/crop_samples'
     spectro_path = fr'{annotation_master_dir}/spectrograms/{params.mel_bands}_mels/raw_spectro'
     mfcc_path = fr'{annotation_master_dir}/mfccs/{params.n_mfcc}_n_mfcc/raw_mfcc'
     spectro_dataset_path = fr'{annotation_master_dir}/spectrograms/{params.mel_bands}_mels/trainvalSet'
     mfcc_dataset_path = fr'{annotation_master_dir}/mfccs/{params.n_mfcc}_n_mfcc/trainvalSet'
-    tmp_dirs = [spectro_path, mfcc_path, spectro_dataset_path, mfcc_dataset_path]
+    tmp_dirs = [crop_path, spectro_path, mfcc_path, spectro_dataset_path, mfcc_dataset_path]
 
-    #cough extraction
-    storage_client = storage.Client()
-    input_bucket = storage_client.get_bucket(input_bucket_name)
-    output_bucket = storage_client.get_bucket(output_bucket_name)
-    extracted, blob_names = extract_from_bucket_v2(input_bucket.name, prefix, root_path=annotation_master_dir, max_samples=20)
-
-    #tmp dirs creation
-    for dir in tmp_dirs:
-        try:
-            os.makedirs(f"{dir}")
-        except:
-            shutil.rmtree(f"{dir}")
-            os.makedirs(f"{dir}")
+    # cough extraction
+    # storage_client = storage.Client()
+    # input_bucket = storage_client.get_bucket(input_bucket_name)
+    # output_bucket = storage_client.get_bucket(output_bucket_name)
+    # local_dirs, gcp_dirs = extract_from_bucket_v2(input_bucket.name, prefix, root_path=annotation_master_dir)
+    #
+    # # tmp dirs creation
+    # for dir in tmp_dirs:
+    #     try:
+    #         os.makedirs(f"{dir}")
+    #     except:
+    #         shutil.rmtree(f"{dir}")
+    #         os.makedirs(f"{dir}")
 
     ######
     # AudioDict struct
-    # fileName : (gcp_artifacts_uri, local_path, xmin, xmax)
+    # fileName : (gcp_output_uri, local_path, gcp_path, annotation (xmin, xmax))
     ######
-    audioDict = {}
-    for filePath, blobPath in zip(extracted,blob_names):
-        listWords = []
-        file, fileDir = os.path.split(filePath)[-1], os.path.split(filePath)[0]
-        blobDir = os.path.split(blobPath)[0]
-        if os.path.splitext(file)[-1] != ".txt":
-            continue
-        else:
-            fileName = os.path.splitext(f"{file}")[0].rsplit('_', 1)[0]
-            gcp_artifacts_uri = f"gs://{blobDir}/{fileName}"
-            local_artifacts_uri = f"{fileDir}/{fileName}"
-            for line in open(f"{filePath}", "r"):
-                listWords.append(line.rstrip("\n").split("\t"))
-            audioDict[(f"{fileName}")] = (
-            f"{gcp_artifacts_uri}", f"{local_artifacts_uri}", cast_matrix(listWords,float))
+    # audioDict = buildAudioDict(local_dirs, gcp_dirs, output_bucket_name, crop_prefix)
+    # with open(fr'{annotation_master_dir}/audioDict.txt', 'w') as file:
+    #     file.write(json.dumps(audioDict))
 
-    print(audioDict)
-
-    #image and cocoSet processing
+    with open(fr'{annotation_master_dir}/audioDict.txt', 'r') as file:
+        audioDict = json.load(file)
+    # image cropping and feature extraction: Spectrograms and Mfccs
+    trainValSetMfcc = []
+    trainValSetSpectro = []
     # init ray
     num_cpus = psutil.cpu_count(logical=False)
     ray.init(num_cpus=num_cpus)
-    ray.put(audioDict)
-    actors = [Annotator.remote(params, i) for i in range(len(audioDict))]
+    ray.put(coughvidLabelMap)
+    actors = [Cropper.remote(params, features_to_compute, i) for i in range(num_cpus)]
     test_time = datetime.now()
-
-    ray.get([actor.annotation_factory.remote(fileName,fileInfo,image_path)
-             for actor, (fileName,fileInfo) in zip(actors,audioDict.items())])
-    print(Annotator.images)
-    annotations_tmp.append(annotations_tmp)
-    print('Processing spetro images and building annotations')
-
-
-    print(f"Total time is {datetime.now() - test_time}")
-    # build-up the COCO-dataset
-    voicemedCocoSet = {
-        "info": info,
-        "licenses": licenses,
-        "images": images,
-        "annotations": annotations,
-        "categories": categories
-    }
-
-    with open(fr'{annotation_path}/{cocoSetName}.json', 'w') as json_file:
-        json_dump = json.dump(voicemedCocoSet, json_file, default=datetimeConverter)
-
-    #building training-validation set as txt file of path,xmin,xmax,ymin,ymax
-    with open(f"{dataset_path}/{cocoSetName}.txt", 'w') as f:
-        for image in tqdm(images):
-            image_id = image["id"]
-            image_url = image["coco_url"]
-            anno = image_url
-            for annotation in annotations:
-                if annotation["image_id"] == image_id:
-                    cat_id = annotation["category_id"]
-                    xmin = int(annotation["bbox"][0])
-                    xmax = int(annotation["bbox"][0] + annotation["bbox"][2])
-                    ymin = annotation["bbox"][1] - annotation["bbox"][3]
-                    ymax = annotation["bbox"][1]
-                    anno += ' ' + ','.join([str(xmin), str(ymin), str(xmax), str(ymax), str(cat_id)])
-            f.write(anno + "\n")
+    print('cropping and feature extraction of audio files')
+    for chunk in dictChunked(audioDict.items(), size=num_cpus):
+        total = ray.get([actor.cropping_factory.remote(fileName, fileInfo, crop_path, coughvidLabelMap,
+                                                       mfcc_path, spectro_path)
+                         for actor, (fileName, fileInfo) in zip(actors, chunk)])
+        trainValSetMfccTmp, trainValSetSpectroTmp = zip(*total)
+        trainValSetMfccTmp = list(chain(*list(trainValSetMfccTmp)))
+        trainValSetSpectroTmp = list(chain(*list(trainValSetSpectroTmp)))
+        for lineMfcc in trainValSetMfccTmp:
+            trainValSetMfcc.append(lineMfcc)
+        for lineSpectro in trainValSetSpectroTmp:
+            trainValSetSpectro.append(lineSpectro)
+    #save mfcc
+    trainValSetMfcc = np.array(trainValSetMfcc)
+    np.random.shuffle(trainValSetMfcc)
+    np.save(f"{mfcc_dataset_path}/trainValSet.npy", trainValSetMfcc)
+    #sace spectrogram
+    trainValSetSpectro = np.array(trainValSetSpectro)
+    np.random.shuffle(trainValSetSpectro)
+    np.save(f"{spectro_dataset_path}/trainValSet.npy", trainValSetMfcc)
 
     #upload toGCP buckets
-    upload_to_bucket_v2(output_bucket_name, images_prefix, root_path= image_path)
-    upload_to_bucket_v2(output_bucket_name, annotation_prefix, root_path=annotation_path)
-    upload_to_bucket_v2(output_bucket_name, dataset_prefix, root_path=dataset_path)
+    upload_to_bucket_v2(output_bucket_name, crop_prefix, root_path= crop_path)
+    upload_to_bucket_v2(output_bucket_name, spectro_prefix, root_path=spectro_path)
+    upload_to_bucket_v2(output_bucket_name, spectro_dataset_prefix, root_path=spectro_dataset_path)
+    upload_to_bucket_v2(output_bucket_name, mfcc_prefix, root_path=mfcc_path)
+    upload_to_bucket_v2(output_bucket_name, mfcc_dataset_prefix, root_path=mfcc_dataset_path)

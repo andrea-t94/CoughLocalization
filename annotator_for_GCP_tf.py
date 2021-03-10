@@ -3,15 +3,15 @@ import ray
 import shutil
 import psutil
 import json
-from itertools import chain, zip_longest, islice
-from datetime import datetime
-from tqdm import tqdm
 from google.cloud import storage
+from itertools import chain, zip_longest
+from datetime import datetime
+
 import params as spectro_params
 from cocoSet_params import info, licenses, categories
-from helpers import datetimeConverter, cast_matrix, dictChunked
+from helpers import datetimeConverter, dictChunked, buildAudioDict
 from tf_features_extractor import Annotator
-from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2, buildAudioDict
+from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2
 
 
 #credentials
@@ -25,6 +25,7 @@ prefix = "COUGHVIDannotated"
 cocoSetName = "voicemedCocoSet"
 annotation_master_dir = '/Users/andreatamburri/Desktop/tmp'
 version_number = 3
+features = ['spectrogram']
 
 
 
@@ -49,7 +50,7 @@ if __name__ == '__main__':
     storage_client = storage.Client()
     input_bucket = storage_client.get_bucket(input_bucket_name)
     output_bucket = storage_client.get_bucket(output_bucket_name)
-    local_dirs, gcp_dirs = extract_from_bucket_v2(input_bucket.name, cough_prefix, root_path=annotation_master_dir)
+    local_dirs, gcp_dirs = extract_from_bucket_v2(input_bucket.name, prefix, root_path=annotation_master_dir)
 
     #tmp dirs creation
     for dir in tmp_dirs:
@@ -61,9 +62,9 @@ if __name__ == '__main__':
 
     ######
     # AudioDict struct
-    # fileName : (gcp_artifacts_uri, local_path, xmin, xmax)
+    # fileName : (gcp_output_uri, local_path, gcp_path, (xmin, xmax))
     ######
-    audioDict = buildAudioDict(local_dirs, gcp_dirs, output_bucket_name)
+    audioDict = buildAudioDict(local_dirs, gcp_dirs, output_bucket_name images_prefix)
 
     #image and cocoSet processing
     images = []
@@ -72,7 +73,7 @@ if __name__ == '__main__':
     num_cpus = psutil.cpu_count(logical=False)
     ray.init(num_cpus=num_cpus)
     ray.put(audioDict)
-    actors = [Annotator.remote(params, i) for i in range(num_cpus)]
+    actors = [Annotator.remote(params, feature, i) for i in range(num_cpus)]
     test_time = datetime.now()
     print('Processing spetro images and building annotations')
     for chunk in dictChunked(audioDict.items(), size=num_cpus):
@@ -81,10 +82,9 @@ if __name__ == '__main__':
         images_tmp, annotations_tmp = zip(*total)
         images_tmp = list(chain(*list(images_tmp)))
         annotations_tmp = list(chain(*list(annotations_tmp)))
-    for image_tmp, annotation_tmp in zip_longest(images_tmp, annotations_tmp, fillvalue=None):
-        if images_tmp != None:
+        for image_tmp in images_tmp:
             images.append(image_tmp)
-        if annotation_tmp != None:
+        for annotation_tmp in annotation_tmp:
             annotations.append(annotation_tmp)
     print(f"Total time is {datetime.now() - test_time}")
 
