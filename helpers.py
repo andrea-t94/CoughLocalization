@@ -1,6 +1,5 @@
 """ REPOSITORY OF HELPERS FUNCTIONS """
-""" THE FILE CONTAINS FUNCTIONS FOR PREPROCESSING SOUND DATA FILES """
-""" COMPRISING OF FEATURE EXTRACTIONS FUNCTIONS AS WELL AS FUNTIONS FOR COMMUNICATING WITH GCP ENVIRONMENT"""
+
 import os
 import numpy as np
 import librosa
@@ -8,7 +7,9 @@ from tqdm import tqdm
 import multiprocessing
 import math
 import warnings
-from datetime import date, datetime
+from datetime import datetime
+from itertools import islice
+
 
 ######################################################################
 #
@@ -35,18 +36,37 @@ AUGMENT = "extracted-data/Noises/"
 
 ######################################################################
 #
-# FEATURE EXTRACTION FUNCTIONS
+# HELPER FUNCTIONS
 #
 ######################################################################
+
+
+def dictChunked(it, size):
+    ''' slice a dictionary in chunck to iterate'''
+    it = iter(it)
+    while True:
+        p = tuple(islice(it, size))
+        if not p:
+            break
+        yield p
+
+def mergedict(*args):
+    ''' merge more dictionaries'''
+    output = {}
+    for arg in args:
+        output.update(arg)
+    return output
 
 def datetimeConverter(o):
     '''convert datetime into string format'''
     if isinstance(o, datetime):
         return o.__str__()
 
+
 def cast_list(test_list, data_type):
     '''type cast list'''
     return list(map(data_type, test_list))
+
 
 def cast_matrix(test_matrix, data_type):
     '''type cast matrix'''
@@ -65,7 +85,6 @@ def load_noises():
         noise, _ = librosa.load(AUGMENT + cat + "/" + noises[cat][i], sr=SR)
         ns.append(noise)
     return ns
-
 
 
 def process(audio, data, i, spectro, n_aug, pad=SAMPLE_SIZE):
@@ -189,3 +208,42 @@ def generate_dataset(folder, output_folder, output_name, spectro=True, start=0, 
 
         start_point += batch
         end_point += batch
+
+
+def yoloSetConverter(input_images, input_annotations):
+    ''' convert COCO-notation in txt file valid for YOLO training'''
+    for image in tqdm(input_images):
+        image_id = image["id"]
+        image_url = image["coco_url"]
+        anno = image_url
+        for annotation in input_annotations:
+            if annotation["image_id"] == image_id:
+                cat_id = annotation["category_id"]
+                xmin = int(annotation["bbox"][0])
+                xmax = int(annotation["bbox"][0] + annotation["bbox"][2])
+                ymin = annotation["bbox"][1] - annotation["bbox"][3]
+                ymax = annotation["bbox"][1]
+                anno += ' ' + ','.join([str(xmin), str(ymin), str(xmax), str(ymax), str(cat_id)])
+        f.write(anno + "\n")
+
+
+def buildAudioDict(input_local_dir: list, input_cloud_dir: list, output_bucket_name: str, output_prefix: str):
+    '''retrieve all the relevant information of an audio file as {fileName: (gcp_outputs_uri, local_outputs_uri, (annotations)}'''
+    ''' usually works well combined with extract_from_bucket_v2 that output all relevant info abount local and cloud dir '''
+    audioMappingDict = {}
+    for filePath, blobPath in zip(input_local_dir, input_cloud_dir):
+        listWords = []
+        fileCompleteName, fileDir = os.path.split(filePath)[-1], os.path.split(filePath)[0]
+        blobDir = os.path.split(blobPath)[0]
+        if os.path.splitext(fileCompleteName)[-1] != ".txt":
+            continue
+        else:
+            fileName = os.path.splitext(f"{fileCompleteName}")[0].rsplit('_', 1)[0]
+            gcp_outputs_uri = f"gs://{output_bucket_name}/{output_prefix}/{fileName}"
+            local_uri = f"{fileDir}/{fileName}"
+            gcp_uri = f"{blobDir}/{fileName}"
+            for line in open(f"{filePath}", "r"):
+                listWords.append(line.rstrip("\n").split("\t"))
+            audioMappingDict[(f"{fileName}")] = (
+            f"{gcp_outputs_uri}", f"{local_uri}", f"{gcp_uri}", cast_matrix(listWords,float))
+    return audioMappingDict

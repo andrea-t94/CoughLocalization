@@ -46,7 +46,6 @@ if __name__ == '__main__':
 
     #loading spectrogram extraction params
     params = spectro_params.Params()
-
     #cough extraction
     storage_client = storage.Client()
     input_bucket = storage_client.get_bucket(input_bucket_name)

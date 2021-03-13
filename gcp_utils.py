@@ -1,17 +1,10 @@
 """ REPOSITORY OF UTILS FUNCTIONS """
 """ COMPRISING FUNTIONS FOR COMMUNICATING WITH GCP ENVIRONMENT"""
 
-import datetime
 import os
-import subprocess
-import sys
-import pandas as pd
-import numpy as np
 import shutil
-from google.cloud import storage
 from tqdm import tqdm
 import multiprocessing
-import math
 import warnings
 from google.cloud import storage
 import threading
@@ -25,6 +18,7 @@ import threading
 
 def file_upload_to_bucket(blob, file_path):
     blob.upload_from_filename(file_path)
+
 
 def upload_to_bucket_v2(bucket_name, prefix, root_path='', file=None, local_dir=''):
     """ Upload file into a bucket, defined by bucket_name and prefix, the folder inside a bucket"""
@@ -75,9 +69,9 @@ def upload_to_bucket_v2(bucket_name, prefix, root_path='', file=None, local_dir=
                 threads = threads[n:]
 
 
-
 def file_download_from_bucket(blob, file_path):
     blob.download_to_filename(file_path)
+
 
 def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir='', file=None, max_samples=100000,
                            labels=['']):
@@ -150,3 +144,4 @@ def extract_from_bucket_v2(bucket_name, prefix, root_path, local_dir='', file=No
                 threads = threads[n:]
 
         return (extracted, blob_names)
+

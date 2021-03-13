@@ -55,7 +55,7 @@ class Params:
   n_fft: int = int(np.ceil(sample_rate * stft_window_seconds))
   hop_length: int = int(np.ceil(sample_rate * stft_hop_seconds))
   mel_bands: int = 64
-  n_mfcc: int = 14
+  n_mfcc: int = 14   #n_mfcc <= mel_bands
   mel_min_hz: float = 125.0
   mel_max_hz: float = 7500.0
   log_offset: float = 0.001
