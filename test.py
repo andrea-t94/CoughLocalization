@@ -15,6 +15,7 @@ from gcp_utils import extract_from_bucket_v2, upload_to_bucket_v2
 import uuid
 import soundfile as sf
 import numpy as np
+from helpers import buildAudioDict, dictChunked
 
 
 def dictChunked(it, size):
@@ -52,9 +53,9 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
 version_number = 1
 input_bucket_name = 'voicemed-ml-raw-data'
 output_bucket_name = 'voicemed-ml-processed-data'
-prefix = "COUGHVIDannotated"
+prefix = "kevin"
 covidSetName = "voicemedCovidSet"
-annotation_master_dir = fr'/Users/andreatamburri/Desktop/tmp/covidClass/v_{version_number}'
+annotation_master_dir = fr'/Users/andreatamburri/Desktop/kevin/covidClass/v_{version_number}'
 features_to_compute = ['mfcc']
 
 if __name__ == '__main__':
@@ -69,10 +70,6 @@ if __name__ == '__main__':
 
     #loading Extractor
     features_extractor = Extractor(params, features_to_compute, 1)
-    spectrogram, mfcc, features = features_extractor.feature_tf('/Users/andreatamburri/Desktop/tmp/covidClass/v_1/COUGHVIDannotated/COVID19/covid_1/3deed1f8-085b-4531-92f1-c03ec500802a.wav')
-    print(spectrogram.shape)
-    print(mfcc.shape)
-    print(features.shape)
 
     #GCP bucket prefixes
     cough_prefix = f"{prefix}/covid/{version_number}"
@@ -90,21 +87,23 @@ if __name__ == '__main__':
     mfcc_dataset_path = fr'{annotation_master_dir}/mfccs/{params.n_mfcc}_n_mfcc/trainvalSet'
     tmp_dirs = [crop_path, spectro_path, mfcc_path, spectro_dataset_path, mfcc_dataset_path]
 
+
+    # cough extraction
+    storage_client = storage.Client()
+    input_bucket = storage_client.get_bucket(input_bucket_name)
+    output_bucket = storage_client.get_bucket(output_bucket_name)
+    local_dirs, gcp_dirs = extract_from_bucket_v2(input_bucket.name, prefix, root_path=annotation_master_dir)
+
     #tmp dirs creation
     for dir in tmp_dirs:
-        try:
-            os.makedirs(f"{dir}")
-        except:
-            shutil.rmtree(f"{dir}")
-            os.makedirs(f"{dir}")
+        print(dir)
+        os.makedirs(f"{dir}")
 
-
-    with open(fr'/Users/andreatamburri/Desktop/test/audioDict.txt', 'r') as file:
+    audioDict = buildAudioDict(local_dirs, gcp_dirs, output_bucket_name, crop_prefix)
+    with open(fr'{annotation_master_dir}/audioDict.txt', 'w') as file:
+         file.write(json.dumps(audioDict))
+    with open(fr'{annotation_master_dir}/audioDict.txt', 'r') as file:
         audioDict = json.load(file)
-    print(audioDict['3116448f-f316-4939-a492-0518f3dd06d7'])
-    test_val = audioDict['3116448f-f316-4939-a492-0518f3dd06d7'][0]
-    label = test_val.split(f"{prefix}")[-1].split("/")[1]
-    print(label)
 
     ######
     # CropAudioDict struct
@@ -145,7 +144,7 @@ if __name__ == '__main__':
     print('cropping audio files')
     for chunk in dictChunked(audioDict.items(), size=num_cpus):
         total = ray.get([actor.cropping_factory.remote(fileName, fileInfo, crop_path, coughvidLabelMap,
-                                                       mfcc_path, spectro_path,input_gcp_prefix=prefix)
+                                                       mfcc_path, spectro_path)
                          for actor, (fileName, fileInfo) in zip(actors, chunk)])
         trainValSetMfccTmp, trainValSetSpectroTmp = zip(*total)
         trainValSetMfccTmp = list(chain(*list(trainValSetMfccTmp)))
@@ -162,7 +161,7 @@ if __name__ == '__main__':
     print(len(trainValSetSpectro))
     trainValSetSpectro = np.array(trainValSetSpectro)
     np.random.shuffle(trainValSetSpectro)
-    np.save(f"{spectro_dataset_path}/trainValSet.npy", trainValSetMfcc)
+    np.save(f"{spectro_dataset_path}/trainValSet.npy", trainValSetSpectro)
 
 
     # trainValSet = []
@@ -181,8 +180,9 @@ if __name__ == '__main__':
     # np.save(f"{mfcc_dataset_path}/trainValSet.npy",trainValSet)
 
 
-    # upload toGCP buckets
-    upload_to_bucket_v2(output_bucket_name, images_prefix, root_path=image_path)
-    upload_to_bucket_v2(output_bucket_name, annotation_prefix, root_path=annotation_path)
-    upload_to_bucket_v2(output_bucket_name, dataset_prefix, root_path=dataset_path)
-
+    #upload toGCP buckets
+    upload_to_bucket_v2(output_bucket_name, crop_prefix, root_path= crop_path)
+    upload_to_bucket_v2(output_bucket_name, spectro_prefix, root_path=spectro_path)
+    upload_to_bucket_v2(output_bucket_name, spectro_dataset_prefix, root_path=spectro_dataset_path)
+    upload_to_bucket_v2(output_bucket_name, mfcc_prefix, root_path=mfcc_path)
+    upload_to_bucket_v2(output_bucket_name, mfcc_dataset_prefix, root_path=mfcc_dataset_path)

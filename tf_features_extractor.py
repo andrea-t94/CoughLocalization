@@ -28,7 +28,7 @@ from datetime import datetime
 from typing import Dict, List
 import os
 import shutil
-
+import warnings
 
 def features_extractor(params, amplitude_spectro=True):
   """Defines the YAMNet waveform-to-class-scores model.
@@ -111,8 +111,8 @@ class Extractor(object):
                  'mfcc': mfcc}
     calc_features = [key for key,val in feat_dict.items()]
 
-    final_list = set(feat_list).intersection(set(calc_features))
-    if len(final_list) < len(feat_list):
+    final_list = set(self.feat_list).intersection(set(calc_features))
+    if len(final_list) < len(self.feat_list):
       raise Warning(f"the list of features to extract contains feature not implemented in the code base! "
                     f"features calculated are {final_list}")
 
@@ -223,46 +223,56 @@ class Cropper(Extractor):
     filePath = f'{fileInfo[1]}.wav'
     gcp_output_uri = fileInfo[0]
     annotations = fileInfo[-1]
+    label = 2
+    labelName = 'other'
     for key, val in labelMapDict.items():
-      if key in filePath:
+      if key in filePath:  #find the label
         label = val
         labelName = key
+
     for path in [mfcc_path, spectro_path, crop_path]:
       try:
         os.makedirs(f"{path}/{labelName}")
       except:
         pass
 
-    # Decode the WAV file and crop it.
-    signal, sr = sf.read(filePath, dtype=np.int16)
-    for i, annotation in enumerate(annotations):
-      starting_point = int(annotation[0] * sr)
-      ending_point = int(annotation[1] * sr) + 1
-      cropFileName = f"{fileName}_{i}"
-      crop_audio_path = f'{crop_path}/{labelName}/{cropFileName}.wav'
-      signal1, sr = sf.read(filePath, dtype=np.int16, start=starting_point, stop=ending_point)
-      if len(signal1) == 0:
-        pass
-      else:
-        try:
-          sf.write(crop_audio_path, signal1, sr)
-        except:
+    # Decode the WAV file and crop it
+    try:
+      signal, sr = sf.read(filePath, dtype=np.int16)
+      for i, annotation in enumerate(annotations):
+        starting_point = int(annotation[0] * sr)
+        ending_point = int(annotation[1] * sr) + 1
+        cropFileName = f"{fileName}_{i}"
+        crop_audio_path = f'{crop_path}/{labelName}/{cropFileName}.wav'
+        signal1, sr = sf.read(filePath, dtype=np.int16, start=starting_point, stop=ending_point)
+        if len(signal1) == 0:
           pass
+        else:
+          try:
+            sf.write(crop_audio_path, signal1, sr)
+          except:
+            pass
 
-        #Feature extraction and saving, the cropper for covid uses sliding windows spectros and mfccs
-        spectrogram, mfcc, features = self.feature_tf(crop_audio_path)
-        np_mfcc = np.array([mfcc, label])
-        np_spectrogram = np.array([features, label])
-        try:
-          np.save(f"{mfcc_path}/{labelName}/{cropFileName}.npy", np_mfcc)
-        except:
-          pass
-        try:
-          np.save(f"{spectro_path}/{labelName}/{cropFileName}.npy", np_spectrogram)
-        except:
-          pass
+          #Feature extraction and saving, the cropper for covid uses sliding windows spectros and mfccs
+          spectrogram, mfcc, features = self.feature_tf(crop_audio_path)
+          #print(features.shape)
+          #print(mfcc.shape)
+          np_mfcc = np.array([mfcc, label])
+          np_spectrogram = np.array([features, label])
+          try:
+            np.save(f"{mfcc_path}/{labelName}/{cropFileName}.npy", np_mfcc)
+          except:
+            pass
+          try:
+            np.save(f"{spectro_path}/{labelName}/{cropFileName}.npy", np_spectrogram)
+          except:
+            pass
 
-      listMfcc.append(np_mfcc)
-      listSpectro.append(np_spectrogram)
+        listMfcc.append(np_mfcc)
+        listSpectro.append(np_spectrogram)
+
+    except:
+      warnings.warn("file in uknown format, not preprocessing it")
+
 
     return listMfcc, listSpectro
