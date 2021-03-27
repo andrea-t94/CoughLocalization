@@ -105,6 +105,7 @@ class Extractor(object):
     if sr != self.params.sample_rate:
       waveform = resampy.resample(waveform, sr, self.params.sample_rate)
       len_signal = len(waveform)
+    #features are spectrograms as wee, but in a different format
     spectrogram, mfcc, features = self.extractor(waveform)
     #dict for mapping features calculated by extractor
     feat_dict = {'spectrogram': spectrogram,

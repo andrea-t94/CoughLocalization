@@ -42,6 +42,7 @@ def upload_to_bucket_v2(bucket_name, prefix, root_path='', file=None, local_dir=
     else:
         """Uploads a directory to the bucket."""
         for root, dirs, files in os.walk(upload_dir):
+
             for file in files:
                 blob = bucket.blob(prefix + "/" + file)
                 p = threading.Thread(target=file_upload_to_bucket, args=(blob, root + "/" + file))

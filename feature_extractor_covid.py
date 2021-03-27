@@ -23,7 +23,7 @@ credential_path = "/Users/andreatamburri/Documents/voicemed-d9a595992992.json"
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
 
 # input variables
-version_number = 4
+version_number = 10
 input_bucket_name = 'voicemed-ml-raw-data'
 output_bucket_name = 'voicemed-ml-processed-data'
 prefix = "COUGHVIDannotated" #prefix of the data source to extract
@@ -44,7 +44,7 @@ if __name__ == '__main__':
     features_extractor = Extractor(params, features_to_compute_images, 1)
 
     # GCP bucket prefixes
-    cough_prefix = f"{prefix}/covidClass/{version_number}"
+    cough_prefix = f"{prefix}/covidClass/v_{version_number}"
     crop_prefix = f"{cough_prefix}/cropped_samples"
     spectro_prefix = f"{cough_prefix}/spectrograms/{params.mel_bands}_mels/raw_spectro"
     mfcc_prefix = f"{cough_prefix}/mfccs/{params.n_mfcc}_n_mfcc/raw_mfcc"
@@ -61,10 +61,10 @@ if __name__ == '__main__':
     tmp_dirs = [crop_path, spectro_path, mfcc_path, spectro_dataset_path, mfcc_dataset_path]
 
     # cough extraction
-    #storage_client = storage.Client()
-    #input_bucket = storage_client.get_bucket(input_bucket_name)
-    #output_bucket = storage_client.get_bucket(output_bucket_name)
-    #local_dirs, gcp_dirs = extract_from_bucket_v2(input_bucket.name, prefix, root_path=annotation_master_dir)
+    storage_client = storage.Client()
+    input_bucket = storage_client.get_bucket(input_bucket_name)
+    output_bucket = storage_client.get_bucket(output_bucket_name)
+    local_dirs, gcp_dirs = extract_from_bucket_v2(input_bucket.name, prefix, root_path=annotation_master_dir)
 
     # tmp dirs creation
     for dir in tmp_dirs:
@@ -78,12 +78,12 @@ if __name__ == '__main__':
     # AudioDict struct
     # fileName : (gcp_output_uri, local_path, gcp_path, annotation (xmin, xmax))
     ######
-    #audioDict = buildAudioDict(local_dirs, gcp_dirs, output_bucket_name, crop_prefix)
-    #with open(fr'{annotation_master_dir}/audioDict.txt', 'w') as file:
-    #     file.write(json.dumps(audioDict))
+    audioDict = buildAudioDict(local_dirs, gcp_dirs, output_bucket_name, crop_prefix)
+    with open(fr'{annotation_master_dir}/audioDict.txt', 'w') as file:
+         file.write(json.dumps(audioDict))
 
-    with open(fr'/Users/andreatamburri/Desktop/tmp/covidClass/v_3/audioDict.txt', 'r') as file:
-        audioDict = json.load(file)
+    #with open(fr'/Users/andreatamburri/Desktop/tmp/covidClass/v_3/audioDict.txt', 'r') as file:
+        #audioDict = json.load(file)
     # image cropping and feature extraction: Spectrograms and Mfccs
     trainValSetMfcc = []
     trainValSetSpectro = []
