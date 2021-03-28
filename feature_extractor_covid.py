@@ -23,7 +23,7 @@ credential_path = "/Users/andreatamburri/Documents/voicemed-d9a595992992.json"
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
 
 # input variables
-version_number = 10
+version_number = 11
 input_bucket_name = 'voicemed-ml-raw-data'
 output_bucket_name = 'voicemed-ml-processed-data'
 prefix = "COUGHVIDannotated" #prefix of the data source to extract
