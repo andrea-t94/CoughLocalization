@@ -49,7 +49,7 @@ from dataclasses import dataclass
 # clip and possibly better performance at a larger computational cost.
 @dataclass(frozen=True)  # Instances of this class are immutable.
 class Params:
-  sample_rate: float = 41500.0
+  sample_rate: float = 44500.0
   stft_window_seconds: float = 0.025
   stft_hop_seconds: float = 0.010
   n_fft: int = int(np.ceil(sample_rate * stft_window_seconds))
@@ -57,10 +57,10 @@ class Params:
   mel_bands: int = 128
   n_mfcc: int = 64   #n_mfcc <= mel_bands
   mel_min_hz: float = 125.0
-  mel_max_hz: float = 7500.0
+  mel_max_hz: float = 12000.0
   log_offset: float = 0.001
   patch_window_seconds: float = 0.48
-  patch_hop_seconds: float = 0.12
+  patch_hop_seconds: float = 0.36
   silence: float = 0.0018
   noise_ratio: float = 0.3
 
