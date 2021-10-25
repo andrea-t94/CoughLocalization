@@ -1,5 +1,5 @@
-# CoughLocalization
-Partial work base on my wor in [Voicemed](https://www.voicemed.io/) API, an API built for Covid detection, as creator of CE Marked Health device in Italy.
+# Cough Processing
+Partial code based on my work in [Voicemed](https://www.voicemed.io/) API, an API built for Covid detection, as creator of CE Marked Health device in Italy.
 
 Repo about all the techniques used for:
 - audio signal processing
